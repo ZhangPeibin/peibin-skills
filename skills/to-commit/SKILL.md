@@ -29,9 +29,16 @@ Turn the current chnage into one clean, Conventional Commits message.
 - Good: `chore: bump eslint to 9.0`
 - Bad: `update dependencies` — missing type, unclear which
 
+
 ## Output
 Present the final message in a fenced code block so the user can copy-paste it directly, then one sentence explaining your choice of type.
 
+## Boundaries
+
+1. **Do not run any state-modifying git command.** This includes `git add`, `git commit`, `git push`, `git reset`, `git checkout`, `git stash`, `git rebase`, `git merge`.
+2. **Do run read-only git commands to gather context:** `git diff`, `git status`, `git log`, `git show`. These are safe because they do not modify the repository.
+3. **Output is text, not action.** The output describes the commit; it never performs one.
+4. **Never create, modify, or delete any file.** This includes CHANGELOG.md, README updates, or anything outside git's tracked state.
 
 ## Rules
 - **Imperative mood only.** `fix`, not `fixes` or `fixed`.
