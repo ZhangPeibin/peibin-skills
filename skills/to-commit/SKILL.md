@@ -5,7 +5,7 @@ description:  Turn the user's current uncommitted changes into a clear Conventio
 
 # to-commit
 
-Turn the current chnage into one clean, Conventional Commits message.
+Turn the current change into one clean, Conventional Commits message.
 
 ## Process 
 
