@@ -101,6 +101,8 @@ sequenceDiagram
 
 ## Diagrams
 
+Follow the **to-mermaid** skill for every Mermaid block. Do not invent your own quoting or shape rules — especially for file paths, API routes, and table names.
+
 Use Mermaid, kept small — a diagram a newcomer can hold in their head beats an exhaustive one they'll skip. `flowchart` for architecture/component relationships; `sequenceDiagram` for ordered flows. Skip the diagram entirely if the feature is small enough that prose is clearer.
 
 ## Verify
