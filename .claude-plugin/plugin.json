@@ -5,6 +5,7 @@
         "./skills/to-commit",
         "./skills/debug-flow",
         "./skills/to-feature-doc",
-        "./skills/to-mermaid"
+        "./skills/to-mermaid",
+        "./skills/to-commits"
     ]
 }
