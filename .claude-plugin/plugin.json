@@ -2,7 +2,6 @@
     "name": "peibin-skills",
     "skills":[
         "./skills/rubber-duck",
-        "./skills/to-commit",
         "./skills/debug-flow",
         "./skills/to-feature-doc",
         "./skills/to-mermaid",
