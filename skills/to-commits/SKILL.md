@@ -34,7 +34,16 @@ When writing the commit message in process 4, follow the styles in [CONVENTIONAL
 
 6. **Execute the plan.** For each group in order:
    1. `git add <files in this group>`
-   2. `git commit -m "<commit message>"`
+   2. Commit. For a single-line message use `git commit -m "<message>"`.
+      For a multi-line message use a HEREDOC:
+      ```
+      git commit -m "$(cat <<'EOF'
+      <type>[optional scope]: <description>
+
+      <body>
+      EOF
+      )"
+      ```
    Repeat until all groups are committed.
 
 7. **Offer to push (optional).** Only after commits succeed, ask:
@@ -87,4 +96,4 @@ feat(payment): add refund flow
 4. Do not commit suspected secrets (`.env`, `credentials.*`, keys). Warn
   and skip unless the user insists.
 5. Pass multi-line commit messages via a HEREDOC, not chained `-m`.
-6. NE
+6. **Never create, modify, or delete any file.** This includes CHANGELOG.md, README updates, or anything outside git's tracked state.
