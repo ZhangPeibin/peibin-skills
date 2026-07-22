@@ -1,6 +1,6 @@
 ---
 name: debug-flow
-description: "This skill guides the users through a structured bug-fix workflow that uses rubber-duck to think the problem through and to-commit to write the final commit message. Use when the user has a bug and wants to walk the full path: understand it, fix it, then commit it."
+description: "This skill guides the users through a structured bug-fix workflow that uses rubber-duck to think the problem through and to-commits to write the final commit message. Use when the user has a bug and wants to walk the full path: understand it, fix it, then commit it."
 disable-model-invocation: true
 ---
 
@@ -17,10 +17,10 @@ disable-model-invocation: true
    - Do not write or suggest code changes for the user. The fix is the user's work.
    - Move to Step 3 when the user says they wants to start commit
 
-3. **To Commit - Write a commit message**
+3. **To Commits - Write commit messages**
    - Enter this step when the user wants to commit their fix.
-   - Follow the to-commit skill. Do not invent your own commit style.
-   - Flow ends when to-commit has produces a commit message for the user.
+   - Follow the to-commits skill. Do not invent your own commit style.
+   - Flow ends when to-commits has produces a commit message for the user.
 
 
 ## Rules
