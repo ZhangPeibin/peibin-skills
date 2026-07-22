@@ -5,6 +5,8 @@
         "./skills/debug-flow",
         "./skills/to-feature-doc",
         "./skills/to-mermaid",
-        "./skills/to-commits"
+        "./skills/to-commits",
+        "./skills/to-pr",
+        "./skills/app/init-flutter-app"
     ]
 }
