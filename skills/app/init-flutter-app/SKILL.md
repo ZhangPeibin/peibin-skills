@@ -110,9 +110,17 @@ rm -rf <project-name>/.git
 ```
 
 **Local:**
+
+Copy with the template's own ignore list so local secrets and generated
+artifacts are never dragged into the new project (`config/prod.json`, signing
+keystores, `*.p12`, `*.mobileprovision`, `build/`, `.dart_tool/`, `ios/Pods/`,
+etc.). `.templateignore` already excludes `.git/`.
 ```bash
-rsync -a --exclude .git <template-path>/ <project-name>/
+rsync -a --exclude-from=<template-path>/.templateignore <template-path>/ <project-name>/
 ```
+If `<template-path>/.templateignore` is missing, stop and warn the user that the
+source does not look like a valid flutter-template (do not fall back to copying
+everything).
 
 All subsequent commands run inside the project directory. Use `<project-name>` as a path prefix
 or `cd` into it before running each command:
@@ -156,14 +164,24 @@ Run:
 ```bash
 flutter clean
 flutter pub get
+dart run slang
 ```
+
+`dart run slang` is required, not optional: Step 3 rewrote the display name in
+`lib/i18n/*.i18n.json`, so the generated `lib/i18n/strings.g.dart` is now stale.
+Without regenerating it, the app shows the old name and `make check`'s
+generated-code check (and the pre-push git hook) will fail.
 
 If `flutter` is not found, stop and tell the user:
 > `flutter` command not found. Make sure Flutter is installed and added to PATH.
 
-If either command fails, show the full error output and stop.
+If any command fails, show the full error output and stop.
 
 ## Step 5 — Initialize Git
+
+Git is initialized **before** installing hooks (Step 6) on purpose: the initial
+commit is created without hook gating, and the code committed here is already
+fresh because dependencies and generated i18n were handled in Step 4.
 
 Run:
 ```bash
@@ -198,7 +216,23 @@ make hooks
 
 If the command fails, show the full error output. This step is non-critical — tell the user they can retry manually with `make hooks`.
 
-## Step 7 — Done
+## Step 7 — Validate
+
+Run the same checks CI and the git hooks use, to confirm the new project is
+clean before handing it off:
+```bash
+make check
+```
+This runs format, generated-code, architecture, doctor, analyze, and tests, and
+may take a minute.
+
+- If it passes, the project is ready.
+- If it fails, show the full output. The most likely cause is stale generated
+  code — re-run `dart run slang` (Step 4) and try `make check` again.
+
+Do not skip this step; it is the definitive confirmation that setup succeeded.
+
+## Step 8 — Done
 
 Tell the user:
 
