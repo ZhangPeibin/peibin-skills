@@ -6,13 +6,14 @@
 
 | Skill | 说明 | 触发场景 |
 |-------|------|----------|
-| [rubber-duck](./skills/rubber-duck/) | 小黄鸭调试伙伴——通过提问引导你自己找到答案，而不是直接给解法 | 卡在某个 bug、设计拿不定主意、想理清思路，或明确说「rubber duck」「小黄鸭」 |
 | [to-commits](./skills/to-commits/) | 按逻辑关注点把未提交改动拆成多个 Conventional Commits | 准备提交、希望按改动类型拆 commit |
 | [to-pr](./skills/to-pr/) | 基于当前分支相对 base 的 commits/diff 写 PR 描述并创建 PR | 分支已有 commits、要开 pull request |
 | [to-mermaid](./skills/to-mermaid/) | 写出能在 Markdown 里正确渲染的 Mermaid 图 | 画 flowchart / sequence 等，尤其标签含路径或特殊字符 |
 | [to-feature-doc](./skills/to-feature-doc/) | 基于真实代码为现有功能模块生成新人 onboarding 文档 | 需要为某个功能/模块写设计说明文档 |
-| [debug-flow](./skills/debug-flow/) | 结构化 bug 修复流程：先用 rubber-duck 理清问题，用户自己修，最后用 to-commits 写提交信息 | 有 bug 想走完整流程：理解 → 修复 → 提交 |
-| [init-flutter-app](./skills/app/init-flutter-app/) | 从 flutter-template（GitHub 或本地）脚手架新 Flutter 应用 | 要用模板初始化 Flutter 项目 |
+| [init-flutter-app](./skills/flutter/init-flutter-app/) | 从 flutter-template（GitHub 或本地）脚手架新 Flutter 应用 | 要用模板初始化 Flutter 项目 |
+| [add-flutter-feature](./skills/flutter/add-flutter-feature/) | 在 flutter-template 派生项目里按规范新增一个 feature（生成器 + playbook + make check） | 要给这类 Flutter 项目加功能 |
+
+> 已归档（不再随插件加载）：`debug-flow`、`rubber-duck`，见 [`skills/deprecated/`](./skills/deprecated/)。
 
 ## 安装
 
@@ -22,13 +23,12 @@
 
 ```bash
 # 示例：安装全部 skills
-ln -s /path/to/my-skills/skills/rubber-duck ~/.cursor/skills/rubber-duck
 ln -s /path/to/my-skills/skills/to-commits ~/.cursor/skills/to-commits
 ln -s /path/to/my-skills/skills/to-pr ~/.cursor/skills/to-pr
 ln -s /path/to/my-skills/skills/to-mermaid ~/.cursor/skills/to-mermaid
 ln -s /path/to/my-skills/skills/to-feature-doc ~/.cursor/skills/to-feature-doc
-ln -s /path/to/my-skills/skills/debug-flow ~/.cursor/skills/debug-flow
-ln -s /path/to/my-skills/skills/app/init-flutter-app ~/.cursor/skills/init-flutter-app
+ln -s /path/to/my-skills/skills/flutter/init-flutter-app ~/.cursor/skills/init-flutter-app
+ln -s /path/to/my-skills/skills/flutter/add-flutter-feature ~/.cursor/skills/add-flutter-feature
 ```
 
 也可以使用 `npx skills add /path/to/my-skills --full-depth` 安装到项目的 `.agents/skills/`（由 `skills-lock.json` 锁定）。
@@ -44,14 +44,16 @@ my-skills/
 ├── .claude-plugin/
 │   └── plugin.json          # Claude Code 插件配置
 ├── skills/
-│   ├── rubber-duck/
 │   ├── to-commits/
 │   ├── to-pr/
 │   ├── to-mermaid/
 │   ├── to-feature-doc/
-│   ├── debug-flow/
-│   └── app/
-│       └── init-flutter-app/
+│   ├── flutter/
+│   │   ├── init-flutter-app/
+│   │   └── add-flutter-feature/
+│   └── deprecated/
+│       ├── debug-flow/
+│       └── rubber-duck/
 ├── skills-lock.json
 └── README.md
 ```

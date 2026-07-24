@@ -1,40 +1,4 @@
 {
   "version": 1,
-  "skills": {
-    "debug-flow": {
-      "source": "/Users/peibin/code/my-skills",
-      "sourceType": "local",
-      "computedHash": "cbe9389b1f1a0e2d01b7a253a06b171265a61c6c97356c6566f00e0c5198ac53"
-    },
-    "init-flutter-app": {
-      "source": "/Users/peibin/code/my-skills",
-      "sourceType": "local",
-      "computedHash": "479ba42a55a0bdb103bc46be1fe703256fbeff9a11d7d81eede9762261409062"
-    },
-    "rubber-duck": {
-      "source": "/Users/peibin/code/my-skills",
-      "sourceType": "local",
-      "computedHash": "840e493942936ce536b7b1bb60b198038ae48a362385a3507ff1c9cffe008c29"
-    },
-    "to-commits": {
-      "source": "/Users/peibin/code/my-skills",
-      "sourceType": "local",
-      "computedHash": "1bc5ef7acc5d1235d72a9d3180782caacb9c2a039ffb4c4e3283afdc33aac99b"
-    },
-    "to-feature-doc": {
-      "source": "/Users/peibin/code/my-skills",
-      "sourceType": "local",
-      "computedHash": "486ec4222ee2d8d665af8699305533eb524c21870f87afcb7dad394178ad6205"
-    },
-    "to-mermaid": {
-      "source": "/Users/peibin/code/my-skills",
-      "sourceType": "local",
-      "computedHash": "8364915699c29bf1cf1481ff283b199234e3a345d36b92298630dd99591adf4d"
-    },
-    "to-pr": {
-      "source": "/Users/peibin/code/my-skills",
-      "sourceType": "local",
-      "computedHash": "cefb1cb80adc85b7c9c28541d061832a875cb4026461158da3aafed56d6c58e9"
-    }
-  }
+  "skills": {}
 }
