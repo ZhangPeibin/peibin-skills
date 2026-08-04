@@ -17,30 +17,39 @@
 
 ## 安装
 
+先克隆仓库：
+
+```bash
+git clone git@github.com:ZhangPeibin/peibin-skills.git
+cd peibin-skills
+```
+
+> 本仓库为私有仓库，需要具备相应的 GitHub 访问权限并配置 SSH 认证。
+
 ### Cursor
 
 将需要的 skill 目录复制或软链到个人 skills 目录：
 
 ```bash
 # 示例：安装全部 skills
-ln -s /path/to/my-skills/skills/to-commits ~/.cursor/skills/to-commits
-ln -s /path/to/my-skills/skills/to-pr ~/.cursor/skills/to-pr
-ln -s /path/to/my-skills/skills/to-mermaid ~/.cursor/skills/to-mermaid
-ln -s /path/to/my-skills/skills/to-feature-doc ~/.cursor/skills/to-feature-doc
-ln -s /path/to/my-skills/skills/flutter/init-flutter-app ~/.cursor/skills/init-flutter-app
-ln -s /path/to/my-skills/skills/flutter/add-flutter-feature ~/.cursor/skills/add-flutter-feature
+ln -s /path/to/peibin-skills/skills/to-commits ~/.cursor/skills/to-commits
+ln -s /path/to/peibin-skills/skills/to-pr ~/.cursor/skills/to-pr
+ln -s /path/to/peibin-skills/skills/to-mermaid ~/.cursor/skills/to-mermaid
+ln -s /path/to/peibin-skills/skills/to-feature-doc ~/.cursor/skills/to-feature-doc
+ln -s /path/to/peibin-skills/skills/flutter/init-flutter-app ~/.cursor/skills/init-flutter-app
+ln -s /path/to/peibin-skills/skills/flutter/add-flutter-feature ~/.cursor/skills/add-flutter-feature
 ```
 
-也可以使用 `npx skills add /path/to/my-skills --full-depth` 安装到项目的 `.agents/skills/`（由 `skills-lock.json` 锁定）。
+也可以使用 `npx skills add /path/to/peibin-skills --full-depth` 安装到项目的 `.agents/skills/`。实际安装流程会按需更新 `skills-lock.json`。
 
 ### Claude Code Plugin
 
-本仓库包含 [`.claude-plugin/plugin.json`](./.claude-plugin/plugin.json)，可作为 Claude Code 插件加载，一次性启用全部 skills。
+本仓库包含 [`.claude-plugin/plugin.json`](./.claude-plugin/plugin.json)，可作为 Claude Code 插件加载，一次性启用全部已注册的 skills。
 
 ## 目录结构
 
 ```
-my-skills/
+peibin-skills/
 ├── .claude-plugin/
 │   └── plugin.json          # Claude Code 插件配置
 ├── skills/
@@ -67,4 +76,4 @@ my-skills/
 
 ## License
 
-MIT
+[MIT](./LICENSE)
