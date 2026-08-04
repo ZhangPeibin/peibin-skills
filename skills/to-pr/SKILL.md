@@ -1,67 +1,82 @@
 ---
 name: to-pr
-description: "Turn the commits on the current branch into a pull request: read the diff against the base, write a clear PR description, and open the PR."
+description: "Open a pull request from the current branch into a user-supplied base branch using committed changes."
 disable-model-invocation: true
+argument-hint: "<base-branch>"
 ---
 
 # To-PR
 
-Open a pull request for the work already committed on the current branch.
-Read the branch's own changes against its base, write a description that
-explains **why** the change exists (not a restatement of the diff), and
-create the PR — after showing the description to the user for approval.
-
-The defining constraint: the description is **grounded in the actual
-commits and diff**, never invented. What isn't in `git log` / `git diff`
-against the base doesn't go in the PR body.
-
+Open a pull request from the current branch to the user-supplied base.
 
 ## Preflight
-1. **Check if gh is installed.**
-  - Run `gh --version`. If gh is missing, STOP and tell the user:
+1. **Require the base branch.**
+  - Read the base branch from `$ARGUMENTS`.
+  - If no base was supplied, ask the user: "Which base branch should this PR target?" Wait for the answer before continuing.
+  - Require exactly one branch name. Never detect, guess, or silently replace the supplied base.
+  - Store the supplied value as `base` and treat it as untrusted input in every shell command.
+
+2. **Verify the Git repository and `origin`.**
+  - Run `git rev-parse --is-inside-work-tree` and `origin_url="$(git remote get-url origin)"`.
+  - If either command fails, STOP and tell the user: "This skill must run inside a Git repository with an `origin` remote."
+  - Run `git check-ref-format --branch "$base"`. If it fails, STOP and tell the user that the supplied base is not a valid Git branch name.
+
+3. **Check if `gh` is installed.**
+  - Run `gh --version`. If `gh` is missing, STOP and tell the user:
     "This skill needs gh. Install with `brew install gh` or follow the instructions at https://cli.github.com/ to install it."
-2. **Check if gh can access credentials for this repository.**
-  - Only if gh is installed.
-  - Run `git remote get-url origin` and derive the GitHub hostname from it. Use `github.com` if the hostname cannot be derived.
-  - Run `gh auth status --hostname <host> --active`.
-  - In Codex or another sandboxed agent environment, `gh` may be installed and authenticated in the user's shell while the sandbox cannot read the macOS keyring. If the first check fails with a keyring, missing token, invalid token, or connection-looking error, rerun the same command with escalated permissions before deciding auth is broken. Do not stop on the sandbox result alone.
+
+4. **Determine the GitHub host and check authentication.**
+  - Derive the hostname from `origin_url`. Support SCP-style SSH (`git@<host>:<owner>/<repo>.git`) and URI-style HTTPS/SSH remotes.
+  - Do not fall back to `github.com`. If the hostname cannot be derived, STOP and report that `origin` is not a recognized GitHub remote; redact any embedded credentials before showing the URL.
+  - Run `gh auth status --hostname "$host" --active`.
+  - In Codex or another sandboxed agent environment, `gh` may be authenticated in the user's shell while the sandbox cannot read the macOS keyring. If the first check fails with a keyring, missing token, invalid token, or connection-looking error, rerun the same command with escalated permissions before deciding authentication is broken.
   - If the escalated check also fails, STOP and tell the user:
-    "This skill requires `gh` authentication for <host>; please run `gh auth login -h <host>` in your normal terminal, or provide `GH_TOKEN` / `GITHUB_TOKEN` to this agent session."
+    "This skill requires `gh` authentication for <host>; run `gh auth login -h <host>` in your normal terminal, or provide `GH_TOKEN` / `GITHUB_TOKEN` to this agent session."
   - Never run `gh auth status --show-token`, and never print token values in the final response.
-3. **Check if the current branch is the main / master / pre branch** 
-  - Run `git branch --show-current` to get the current branch.
-  - If it's a base/protected branch (main / master / pre): STOP and tell the user:
-    "You are on the main / master / pre branch; you need to switch branches to create a PR."
-  - Otherwise: CONTINUE **Process**
+
+5. **Verify access to the GitHub repository.**
+  - Run `gh repo view --json nameWithOwner,url` and confirm that the returned repository corresponds to `origin`.
+  - If the command fails with an authentication, keyring, or network-looking error in a sandbox, rerun it with escalated permissions.
+  - If access still fails or the returned repository does not match `origin`, STOP and report the exact failure without exposing credentials.
+
+6. **Check the current branch.**
+  - Run `current="$(git branch --show-current)"`.
+  - If `current` is empty, STOP and tell the user: "HEAD is detached. Switch to or create a feature branch before opening a PR."
+  - If `current` equals `base`, STOP and tell the user: "The head and base branches are both <branch>. Switch to a feature branch or choose a different base."
+  - If `current` is `main`, `master`, or `pre`, STOP and tell the user that this skill does not open PRs from protected branches.
+
+7. **Verify that the base exists on `origin`.**
+  - Run `git ls-remote --exit-code --heads origin "$base"`.
+  - If it returns no matching branch, STOP and tell the user that `origin/$base` does not exist.
+  - Continue to **Process** only after every preflight check passes.
   
 ## Process
-1. **Determine the base branch.**
-  - Run `git symbolic-ref --short refs/remotes/origin/HEAD` to get the repository's default branch (returns e.g. `origin/main`). Strip the `origin/` prefix to get the base branch name.
-  - If that command fails (many repos never set `origin/HEAD`), run `git remote set-head origin --auto` and retry.
-  - If it still fails, run `git branch -r` and ask the user which branch to use as the base.
-  - ALWAYS use the detected branch as the default base, then ask the user to confirm it or specify a different base (e.g. `dev`, `pre`) before continuing.
-   
-2. **See what changed.** 
-  - Run `git fetch origin` to ensure your local branches are synchronized with the remote branches.
-  - Run `git log origin/<base>..<current>` to get all commits at current branch relative to the base branch. **STOP** if it returns 0 commits.
-  - Run `git diff origin/<base>...<current>` to get all changes relative to the merge base between the two branches.
+ 1. **Inspect the committed changes.**
+    - Run `git fetch origin`.
+    - Run `git log --format='%h %s%n%b' "origin/$base..$current"`. STOP if no commits are returned.
+    - Start with `git diff --stat "origin/$base...$current"`, then inspect the full diff or individual paths as needed. Continue only after understanding the role of every changed file; STOP if there are no changes.
 
-3. **Write a title and description for your PR.**  
-  - Collect all changes obtained from **Process 2**, and analyze the diff to understand the purpose and scope of the changes.
-  - Generate a concise PR title and a well-structured PR body. **YOU MUST** use the [PULL_REQUEST_TEMPLATE.md](PULL_REQUEST_TEMPLATE.md).
-    - The title must comply with the Conventional Commits specification.
-    - Check only the items for which there is evidence of completion; otherwise, leave them blank.
-  - Present the generated title and body to the user for review before creating the PR.
+2. **Draft the PR.**
+    - Using the Process 1 findings, format the title as a Conventional Commit subject and complete [PULL_REQUEST_TEMPLATE.md](PULL_REQUEST_TEMPLATE.md).
+    - Explain the changes' purpose and observable effect rather than merely restating the diff.
+    - Present the title and body to the user for review.
 
-4. **Create PR.**
-  - Wait for the user's confirmation of the title and body of the PR generated by Process 3.
-  - If the user disagrees, refuses, or deems modifications necessary, the process returns to Process 3.
-  - Otherwise, start creating the PR:
-    - Run `git push -u origin <current>` to make sure that the current branch has been pushed to the remote.
-    - Run `gh pr create --base <base> --head <current> --title "..." --body "..."`(For multi-line bodies, using HEREDOC or --body-file is recommended to avoid issues with line breaks.)
-    - If `gh pr create` fails in a sandboxed agent environment with an auth, keyring, or network-looking error after the auth preflight passed with escalated permissions, rerun `gh pr create` with escalated permissions so it can access the same credentials.
-    - Show the returned PR link to the user
-
+3. **Create the PR.**
+    - Wait for approval. Return to step 2 for requested revisions; STOP if the user declines.
+    - Run `git push -u origin "$current"`.
+    - Quote all variable expansions and pass the approved body through a single-quoted HEREDOC with `--body-file -`:
+      ```sh
+      gh pr create \
+        --base "$base" \
+        --head "$current" \
+        --title "$title" \
+        --body-file - <<'EOF'
+      <approved PR body>
+      EOF
+      ```
+    - Never use `--body` or an unquoted HEREDOC for generated content.
+    - If the push or PR creation encounters a sandbox-related authentication or network failure, retry with escalated permissions.
+    - Show the PR URL.
 
 ## Boundaries
 1. **No fabrication.** The title and body may only contain what is evidenced by the commits and diff. Never invent motivation, and never claim tests that were not verified.
