@@ -1,26 +1,28 @@
 ---
 name: to-commits
-description: Turn the user's uncommitted changes into multiple well-scoped commits, grouped by logical concern.
-disable-model-invocation: true 
+description: Turn the user's uncommitted changes into one or more well-scoped Conventional Commits, grouped by logical concern.
+disable-model-invocation: true
 ---
 
 # To-Commits
 
-Split the current uncommitted changes into **several small**, **well-scoped**
-Conventional Commits, each containing exactly one logical change.
+Turn the current uncommitted changes into **one or more small**, **well-scoped**
+Conventional Commits. Each commit contains exactly one logical change; do not
+split a single logical change merely to create multiple commits.
 
-When writing the commit message in process 4, follow the styles in [CONVENTIONAL-COMMIT-STYLE.md](CONVENTIONAL-COMMIT-STYLE.md). 
+When writing commit messages, follow [CONVENTIONAL-COMMIT-STYLE.md](CONVENTIONAL-COMMIT-STYLE.md).
 
 ## Process
-1. **See what changed.** Gather the full set of changes yourself: run `git status --porcelain` to list every modified, staged, and untracked file, then `git diff HEAD` for tracked content. Untracked (new) files won't appear in the diff, so treat anything `git status` lists as in scope. If you can't run git, ask the user to paste both outputs.
-2. **Group the changes (by file).** Apply the **Grouping Rules** below to sort every changed file into a logical group. A file belongs to exactly one group, so each file lands in a single commit.
-3. **Sort the Groups.** Sort by dependencies; commit code that is depended upon by other code first. 
+1. **Inspect the full state.** Run `git status --porcelain=v1`, `git diff --cached`, and `git diff` to inspect staged and unstaged changes separately. Read every untracked text file before grouping it. Report untracked binary or large files separately and ask whether to include them. If there are no changes, report that there is nothing to commit and stop. If you cannot run Git, ask the user to paste the outputs and the untracked-file contents.
+2. **Protect existing staging.** Treat existing staged content as user-owned. Never unstage, reset, or restage it. If the existing index already contains more than one planned group, or a file has both staged and unstaged changes that must be separated, stop and ask the user how to proceed. A staged group may be committed only when it exactly matches one confirmed plan group.
+3. **Group the changes.** Apply the **Grouping Rules** below. A file normally belongs to exactly one group. If unrelated changes in one file would require separate commits, stop and ask rather than staging the whole file or changing the existing index.
+4. **Sort the groups.** Sort by dependencies; commit code that is depended upon by other code first.
     1. Core/Shared (types, utils, config)
     2. Business Logic
     3. API/Routing Layer
     4. Testing
     5. Chore/Docs
-4. **Write commit message per group.** Using Conventional Commit style:
+5. **Write a commit message per group.** Use Conventional Commit style:
 
 ```
 <type>[optional scope]: <description>
@@ -29,11 +31,10 @@ When writing the commit message in process 4, follow the styles in [CONVENTIONAL
 
 [optional footer(s)]
 ```
-5. **Present the plan.** Present the **final commit** plan to the user. Ask: "Does this plan look right? Proceed with committing?" 
-   Wait for confirmation before continuing.
+6. **Present the plan.** State each group, its files, its staged/unstaged state, and its commit message. Call out skipped suspected secrets and untracked binary or large files. Ask: "Does this plan look right? Proceed with committing?" Wait for explicit confirmation before continuing.
 
-6. **Execute the plan.** For each group in order:
-   1. `git add <files in this group>`
+7. **Execute the plan.** After the user confirms, commit each group in order:
+   1. For a confirmed group that exactly matches pre-existing staged content, leave the index unchanged. Otherwise, stage only the planned files with `git add -- <files in this group>`.
    2. Commit. For a single-line message use `git commit -m "<message>"`.
       For a multi-line message use a HEREDOC:
       ```
@@ -46,14 +47,14 @@ When writing the commit message in process 4, follow the styles in [CONVENTIONAL
       ```
    Repeat until all groups are committed.
 
-7. **Offer to push (optional).** Only after commits succeed, ask:
+8. **Offer to push (optional).** Only after commits succeed, ask:
    "Push these commits to <remote>/<current-branch>? (y/n)"
    - Push only the current branch to its own remote tracking branch.
    - Never force-push. Never push to a different branch than the one
      checked out without explicit, specific confirmation.
    - If the user declines, stop here — the commits stay local.
 
-8. **Offer to integrate (optional).** If the user wants these changes on
+9. **Offer to integrate (optional).** If the user wants these changes on
    a shared branch (e.g. dev / pre / staging), ask which target, then
    PREFER opening a pull request:
    `gh pr create --base <target> --head <current-branch>`
@@ -66,7 +67,7 @@ When writing the commit message in process 4, follow the styles in [CONVENTIONAL
 
 
 ## Grouping Rules
-1. Only group changes into the same commit if they are causally related or part of the same functional change.
+1. Group changes into the same commit only when they are causally related or part of the same functional change.
 
 **Good** — auth change triggered notification update, same commit:
 ```
@@ -88,12 +89,10 @@ feat(payment): add refund flow
 ```
 
 ## Boundaries
-1. Commit locally without asking; anything that touches a **remote** or a **shared branch** (push, merge, PR) requires explicit, specific 
-   confirmation naming the exact branch and target.
+1. Create local commits only after the user explicitly confirms the final plan. Do not ask again for each individual commit after that confirmation. Anything that touches a **remote** or a **shared branch** (push, merge, PR) requires separate, explicit confirmation naming the exact branch and target.
 2. NEVER force-push (`push -f` / `--force-with-lease`), `reset --hard`, `rebase`, or `commit --amend` unless the user explicitly requests it.
 3. NEVER push directly to a protected branch (main/master/dev/pre/prod)
   without a clear warning and confirmation; prefer a PR.
-4. Do not commit suspected secrets (`.env`, `credentials.*`, keys). Warn
-  and skip unless the user insists.
+4. Do not commit suspected secrets, whether identified by file name or content (`.env`, `credentials.*`, keys, tokens). Warn and skip unless the user explicitly insists.
 5. Pass multi-line commit messages via a HEREDOC, not chained `-m`.
-6. **Never create, modify, or delete any file.** This includes CHANGELOG.md, README updates, or anything outside git's tracked state.
+6. Do not create, modify, or delete working-tree files. Git metadata changes required by `git add` and `git commit` are permitted.

@@ -14,17 +14,18 @@ Why this feature exists and what problem it solves. Include:
 
 How a newcomer should think about this feature before diving into files — the core abstraction and main moving parts. Plain language; file paths optional here.
 
-### 不变量
+### Invariants
 
-List invariants that hold across flows. Each row must be **expanded later** in Core behaviour (use **详见** to point at the subsection).
+List invariants that hold across flows. Each row must be **expanded later** in Core behaviour (use **Details** to point at the subsection).
 
-| 类型 | 不变量 | 为何重要 | 详见 |
-| ---- | ------ | -------- | ---- |
-| 并发 | e.g. idempotency key, row locks | | §<flow> |
-| 账务 | e.g. unit-price continuity, conservation of shares | | §<flow> → 一致性说明 |
-| 时序 | e.g. settlement step order, T+1 boundary | | §<flow> |
+| Type | Invariant | What it guarantees | Details |
+| ---- | --------- | ------------------ | ------- |
+| Concurrency | e.g. idempotency key, row locks | | §<flow> |
+| Accounting | e.g. unit-price continuity, conservation of shares | | §<flow> → Consistency statement |
+| Temporal / ordering | e.g. settlement step order, T+1 boundary | | §<flow> |
 
-Skip types that don't apply. For financial/settlement modules, **账务** and **并发** rows are required unless explicitly N/A.
+
+Skip types that don't apply. For financial/settlement modules, **Accounting** and **Concurrency** rows are required unless explicitly N/A.
 
 ## Domain concepts
 
@@ -71,13 +72,13 @@ Repeat per major flow — one diagram per subsection is fine. Follow **to-mermai
 
 For **settlement, pricing, ledger, or balance** flows, add a subsection after the flow description:
 
-#### 一致性说明
+#### Consistency statement
 
-- **公式 / 单价怎么算** — numerator, denominator, which shares or balances are included (e.g. does `total_shares` include redeeming at yield time?).
-- **这一步保什么** — which invariant this step maintains; how it connects to the previous/next step.
-- **例外 / 简化** — clamps, zero floors, or `(inferred)` shortcuts in code.
+- **Formula / unit price calculation** — numerator, denominator, which shares or balances are included (e.g. does `total_shares` include redeeming at yield time?).
+- **What invariant this preserves** — which invariant this step maintains; how it connects to the previous/next step.
+- **Exceptions / simplifications** — clamps, zero floors, or `(inferred)` shortcuts in code.
 
-Link back to the matching row in **Mental model → 不变量**.
+Link back to the matching row in **Mental model → Invariants**.
 
 ## Interfaces
 
