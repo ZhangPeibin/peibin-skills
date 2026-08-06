@@ -1,11 +1,20 @@
 {
     "name": "peibin-skills",
-    "skills":[
-        "./skills/to-feature-doc",
-        "./skills/to-mermaid",
-        "./skills/to-commits",
-        "./skills/to-pr",
-        "./skills/flutter/init-flutter-app",
-        "./skills/flutter/add-flutter-feature"
+    "skills": [
+        "./skills/personal/to-feature-doc",
+        "./skills/personal/to-mermaid",
+        "./skills/personal/to-commits",
+        "./skills/personal/to-pr",
+        "./skills/personal/flutter/init-flutter-app",
+        "./skills/personal/flutter/add-flutter-feature",
+        "./skills/vendor/mattpocock/productivity/writing-great-skills",
+        "./skills/vendor/mattpocock/productivity/grilling",
+        "./skills/vendor/mattpocock/engineering/domain-modeling",
+        "./skills/vendor/mattpocock/engineering/grill-with-docs",
+        "./skills/vendor/mattpocock/engineering/to-spec",
+        "./skills/vendor/mattpocock/engineering/to-tickets",
+        "./skills/vendor/mattpocock/engineering/implement",
+        "./skills/vendor/mattpocock/engineering/tdd",
+        "./skills/vendor/mattpocock/engineering/code-review"
     ]
 }
