@@ -1,6 +1,6 @@
 ---
 name: to-mermaid
-description: Write Mermaid diagrams that render correctly in Markdown. Use when producing flowchart, sequence, or other Mermaid blocks — especially labels with file paths, URLs, or special characters.
+description: Write Mermaid diagrams that render correctly in Markdown. Use when producing flowchart, sequence, or other Mermaid blocks — especially labels with file paths, URLs, special characters, or Mermaid reserved words.
 ---
 
 # To-Mermaid
@@ -17,7 +17,7 @@ Use double quotes inside the brackets:
 id["label text here"]
 ```
 
-When in doubt, quote. A quoted label never breaks the parser.
+When in doubt, quote display labels. Quoting display text does not make an unsafe node or participant identifier valid.
 
 ## Characters that require quoting
 
@@ -63,6 +63,27 @@ sequenceDiagram
 
 Arrow labels with only plain words need no quotes: `Caller->>Service: request`.
 
+### Participant identifiers
+
+Use simple technical identifiers for participants and actors: start with a letter, then use only letters, digits, or underscores. Keep display names separate with `as` when needed.
+
+Do not use Mermaid sequence statement or control words as identifiers. They are parsed case-insensitively, so an identifier such as `Loop` is read as the `loop` statement instead of an actor. Avoid words such as `participant`, `actor`, `loop`, `alt`, `else`, `opt`, `par`, `and`, `critical`, `option`, `break`, `rect`, `end`, `note`, `activate`, `deactivate`, `autonumber`, `box`, `create`, and `destroy`.
+
+**Bad** — `Loop` is parsed as a control keyword after the arrow:
+
+```mermaid
+sequenceDiagram
+  Ledger-->>Loop: terminal events
+```
+
+**Good** — use a safe identifier and preserve the desired display name with an alias:
+
+```mermaid
+sequenceDiagram
+  participant SettlementCycle as Loop
+  Ledger-->>SettlementCycle: terminal events
+```
+
 ## Good / bad examples
 
 **Bad** — parse error (parallelogram + unclosed `/`):
@@ -99,4 +120,6 @@ flowchart TD
 
 1. Scan every node label for `/`, `*`, `.`, `(`, `)`. Quote any that have them.
 2. Check no label starts with `[/` unless you intentionally want a parallelogram **and** close it with `/]`.
-3. Keep diagrams small — a newcomer should grasp them at a glance.
+3. In sequence diagrams, check every participant identifier against Mermaid statement and control words case-insensitively; replace unsafe identifiers and retain their display names with `as`.
+4. When the repository provides a Mermaid parser or renderer, run every diagram through it before finishing.
+5. Keep diagrams small — a newcomer should grasp them at a glance.
