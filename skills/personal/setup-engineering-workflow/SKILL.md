@@ -1,16 +1,16 @@
 ---
-name: setup-matt-pocock-skills
-description: Configure this repo for the engineering skills — set up its issue tracker, triage label vocabulary, and domain doc layout. Run once before first use of the other engineering skills.
-disable-model-invocation: true
+name: setup-engineering-workflow
+description: Configure this repo for the engineering skills — set up its issue tracker, triage label vocabulary, domain doc layout, and optional pre-PRD feature docs. Run once before first use of the other engineering skills.
 ---
 
-# Setup Matt Pocock's Skills
+# Setup Engineering Workflow
 
 Scaffold the per-repo configuration that the engineering skills assume:
 
 - **Issue tracker** — where issues live (GitHub by default; local markdown is also supported out of the box)
 - **Triage labels** — the strings used for the five canonical triage roles
 - **Domain docs** — where `CONTEXT.md` and ADRs live, and the consumer rules for reading them
+- **Feature docs** — where pre-PRD requirements discussions live when `requirements-analysis` is installed
 
 This is a prompt-driven skill, not a deterministic script. Explore, present what you found, confirm with the user, then write.
 
@@ -25,8 +25,10 @@ Look at the current repo to understand its starting state. Read whatever exists;
 - `CONTEXT.md` and `CONTEXT-MAP.md` at the repo root
 - `docs/adr/` and any `src/*/docs/adr/` directories
 - `docs/agents/` — does this skill's prior output already exist?
+- `docs/feature/` and other product-document directories — is there already a convention for pre-PRD feature discussions?
 - `.scratch/` — sign that a local-markdown issue tracker convention is already in use
 - Is the `triage` skill installed? (a `triage` skill folder alongside this one, or `triage` in your available skills.) This decides whether Section B runs at all.
+- Is the `requirements-analysis` skill installed? This decides whether Section D runs at all.
 - Monorepo signals — a `pnpm-workspace.yaml`, a `workspaces` field in `package.json`, or a populated `packages/*` with its own `src/`. Present only in a genuinely large multi-package repo; their absence means single-context, which is almost every repo.
 
 ### 2. Present findings and ask
@@ -60,12 +62,22 @@ The defaults are the five canonical roles, each label string equal to its name: 
 
 Offer **multi-context** — a root `CONTEXT-MAP.md` pointing to per-context `CONTEXT.md` files — only when exploration found monorepo signals. Then confirm which layout they want.
 
+**Section D — Feature docs.** Skip this section entirely if `requirements-analysis` isn't installed.
+
+Feature docs hold the analysis that happens before `/to-spec` publishes a formal PRD. If exploration found an established convention, recommend it. Otherwise ask exactly one question:
+
+> Do you want to keep the default feature-doc layout? (recommended: **yes**)
+
+The default is `docs/feature/<release>/<feature-slug>/discussion.md`. On **yes**, record it as-is. Only if the user says no, collect a replacement path template. The template must identify a feature unambiguously; it may omit `<release>` when the repo does not organize work by release.
+
+Record the choice in `docs/agents/feature-docs.md`. This configuration covers pre-PRD discussion documents only. Formal PRDs and implementation tickets continue to use the issue tracker configured in Section A.
+
 ### 3. Confirm and edit
 
 Show the user a draft of:
 
 - The `## Agent skills` block to add to whichever of `CLAUDE.md` / `AGENTS.md` is being edited (see step 4 for selection rules)
-- The contents of `docs/agents/issue-tracker.md`, `docs/agents/domain.md`, and `docs/agents/triage-labels.md` (the last only when `triage` is installed)
+- The contents of `docs/agents/issue-tracker.md`, `docs/agents/domain.md`, `docs/agents/triage-labels.md` (only when `triage` is installed), and `docs/agents/feature-docs.md` (only when `requirements-analysis` is installed)
 
 Let them edit before writing.
 
@@ -97,9 +109,15 @@ The block:
 ### Domain docs
 
 [one-line summary of layout — "single-context" or "multi-context"]. See `docs/agents/domain.md`.
+
+### Feature docs
+
+[one-line summary of the pre-PRD discussion path]. See `docs/agents/feature-docs.md`.
 ```
 
 Include the `### Triage labels` sub-block, and write `docs/agents/triage-labels.md`, only when `triage` is installed and Section B ran. When it isn't, both are omitted.
+
+Include the `### Feature docs` sub-block, and write `docs/agents/feature-docs.md`, only when `requirements-analysis` is installed and Section D ran. When it isn't, both are omitted.
 
 Then write the docs files using the seed templates in this skill folder as a starting point:
 
@@ -108,9 +126,10 @@ Then write the docs files using the seed templates in this skill folder as a sta
 - [issue-tracker-local.md](./issue-tracker-local.md) — local-markdown issue tracker
 - [triage-labels.md](./triage-labels.md) — label mapping (only if `triage` is installed)
 - [domain.md](./domain.md) — domain doc consumer rules + layout
+- [feature-docs.md](./feature-docs.md) — pre-PRD discussion layout (only if `requirements-analysis` is installed)
 
 For "other" issue trackers, write `docs/agents/issue-tracker.md` from scratch using the user's description.
 
 ### 5. Done
 
-Tell the user the setup is complete and which engineering skills will now read from these files. Mention they can edit `docs/agents/*.md` directly later — re-running this skill is only necessary if they want to switch issue trackers or restart from scratch.
+Tell the user the setup is complete and which engineering skills will now read from these files. Mention they can edit `docs/agents/*.md` directly later — re-running this skill is only necessary if they want to switch issue trackers, change the feature-doc layout, or restart from scratch.

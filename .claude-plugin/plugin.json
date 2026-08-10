@@ -2,6 +2,8 @@
     "name": "peibin-skills",
     "skills": [
         "./skills/personal/to-feature-doc",
+        "./skills/personal/requirements-analysis",
+        "./skills/personal/setup-engineering-workflow",
         "./skills/personal/to-mermaid",
         "./skills/personal/to-commits",
         "./skills/personal/to-pr",
@@ -14,7 +16,6 @@
         "./skills/vendor/mattpocock/engineering/to-spec",
         "./skills/vendor/mattpocock/engineering/to-tickets",
         "./skills/vendor/mattpocock/engineering/implement",
-        "./skills/vendor/mattpocock/engineering/tdd",
-        "./skills/vendor/mattpocock/engineering/code-review"
+        "./skills/vendor/mattpocock/engineering/tdd"
     ]
 }

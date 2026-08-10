@@ -12,14 +12,18 @@
 | [to-pr](./skills/personal/to-pr/) | 基于当前分支相对 base 的 commits/diff 写 PR 描述并创建 PR | 分支已有 commits、要开 pull request |
 | [to-mermaid](./skills/personal/to-mermaid/) | 写出能在 Markdown 里正确渲染的 Mermaid 图 | 画 flowchart / sequence 等，尤其标签含路径或特殊字符 |
 | [to-feature-doc](./skills/personal/to-feature-doc/) | 基于真实代码为现有功能模块生成新人 onboarding 文档 | 需要为某个功能/模块写设计说明文档 |
+| [requirements-analysis](./skills/personal/requirements-analysis/) | 通过逐项追问澄清 Feature，并持续维护 pre-PRD 讨论文档 | 需求尚未清晰、需要保留讨论和决策上下文 |
+| [setup-engineering-workflow](./skills/personal/setup-engineering-workflow/) | 为工程 Skill 配置 issue tracker、标签、领域文档和 pre-PRD Feature 文档 | 首次在仓库中使用开发工作流 |
 | [init-flutter-app](./skills/personal/flutter/init-flutter-app/) | 从 flutter-template（GitHub 或本地）脚手架新 Flutter 应用 | 要用模板初始化 Flutter 项目 |
 | [add-flutter-feature](./skills/personal/flutter/add-flutter-feature/) | 在 flutter-template 派生项目里按规范新增一个 feature（生成器 + playbook + make check） | 要给这类 Flutter 项目加功能 |
 
+`setup-engineering-workflow` 基于 [mattpocock/skills](https://github.com/mattpocock/skills) 的 `setup-matt-pocock-skills`（revision `2ab958093e83e0ec752e6c1c5932da465bf23e0c`）改造，保留原 MIT 许可，并增加了 `requirements-analysis` 所需的 Feature Docs 配置。
+
 ## Vendor Skills
 
-[Matt Pocock Skills](./skills/vendor/mattpocock/) 来自本地 fork，当前筛选保留 22 个 Skill。来源版本记录在 [`SOURCE.json`](./skills/vendor/mattpocock/SOURCE.json)，原 MIT 许可证保存在同一目录。
+[Matt Pocock Skills](./skills/vendor/mattpocock/) 来自本地 fork，当前筛选保留 21 个 Skill。来源版本记录在 [`SOURCE.json`](./skills/vendor/mattpocock/SOURCE.json)，原 MIT 许可证保存在同一目录。
 
-vendor 内容默认不随插件加载。目前启用了 [`writing-great-skills`](./skills/vendor/mattpocock/productivity/writing-great-skills/)，以及由 `grill-with-docs`、`to-spec`、`to-tickets`、`implement`、`tdd`、`code-review` 组成的开发主流程。主流程同时启用了 `grill-with-docs` 依赖的 `grilling` 和 `domain-modeling`；其他 Skill 保留源码，等实际需要时再逐个加入插件清单。
+vendor 内容默认不随插件加载。目前启用了 [`writing-great-skills`](./skills/vendor/mattpocock/productivity/writing-great-skills/)，以及由 `grill-with-docs`、`to-spec`、`to-tickets`、`implement`、`tdd`、`code-review` 组成的开发主流程。主流程同时启用 personal 的 `setup-engineering-workflow` 和 `requirements-analysis`，以及 `grill-with-docs` 依赖的 `grilling` 和 `domain-modeling`；其他 Skill 保留源码，等实际需要时再逐个加入插件清单。
 
 ### Workflow
 
@@ -49,7 +53,6 @@ vendor 内容默认不随插件加载。目前启用了 [`writing-great-skills`]
 | [`domain-modeling`](./skills/vendor/mattpocock/engineering/domain-modeling/) | 澄清领域术语、上下文和重要架构决策。 |
 | [`codebase-design`](./skills/vendor/mattpocock/engineering/codebase-design/) | 用深模块、接口和 seam 等概念设计模块边界。 |
 | [`improve-codebase-architecture`](./skills/vendor/mattpocock/engineering/improve-codebase-architecture/) | 扫描架构改进机会，并生成可视化分析报告。 |
-| [`setup-matt-pocock-skills`](./skills/vendor/mattpocock/engineering/setup-matt-pocock-skills/) | 为整套 engineering 工作流配置 issue tracker、标签和文档结构。 |
 | [`grill-me`](./skills/vendor/mattpocock/productivity/grill-me/) | 在没有代码库上下文时，通过追问打磨计划或设计。 |
 | [`grilling`](./skills/vendor/mattpocock/productivity/grilling/) | 为其他 Skill 提供持续追问的底层访谈流程。 |
 | [`handoff`](./skills/vendor/mattpocock/productivity/handoff/) | 把当前会话压缩成交接文档，供新会话继续。 |
@@ -77,6 +80,8 @@ ln -s /path/to/peibin-skills/skills/personal/to-commits ~/.cursor/skills/to-comm
 ln -s /path/to/peibin-skills/skills/personal/to-pr ~/.cursor/skills/to-pr
 ln -s /path/to/peibin-skills/skills/personal/to-mermaid ~/.cursor/skills/to-mermaid
 ln -s /path/to/peibin-skills/skills/personal/to-feature-doc ~/.cursor/skills/to-feature-doc
+ln -s /path/to/peibin-skills/skills/personal/requirements-analysis ~/.cursor/skills/requirements-analysis
+ln -s /path/to/peibin-skills/skills/personal/setup-engineering-workflow ~/.cursor/skills/setup-engineering-workflow
 ln -s /path/to/peibin-skills/skills/personal/flutter/init-flutter-app ~/.cursor/skills/init-flutter-app
 ln -s /path/to/peibin-skills/skills/personal/flutter/add-flutter-feature ~/.cursor/skills/add-flutter-feature
 ```
@@ -86,7 +91,7 @@ ln -s /path/to/peibin-skills/skills/personal/flutter/add-flutter-feature ~/.curs
 只安装开发主流程及其依赖：
 
 ```bash
-npx skills add /path/to/peibin-skills --full-depth --skill grill-with-docs to-spec to-tickets implement tdd code-review grilling domain-modeling
+npx skills add /path/to/peibin-skills --full-depth --skill setup-engineering-workflow requirements-analysis grill-with-docs to-spec to-tickets implement tdd code-review grilling domain-modeling
 ```
 
 ### Claude Code Plugin
@@ -105,6 +110,8 @@ peibin-skills/
 │   │   ├── to-pr/
 │   │   ├── to-mermaid/
 │   │   ├── to-feature-doc/
+│   │   ├── requirements-analysis/
+│   │   ├── setup-engineering-workflow/
 │   │   └── flutter/
 │   │       ├── init-flutter-app/
 │   │       └── add-flutter-feature/

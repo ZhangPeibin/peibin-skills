@@ -4,5 +4,7 @@
   "revision": "2ab958093e83e0ec752e6c1c5932da465bf23e0c",
   "copiedAt": "2026-08-05",
   "license": "MIT",
-  "localAdditions": []
+  "localAdditions": [
+    "Retargeted retained engineering skills from the upstream setup skill to the personal setup-engineering-workflow fork."
+  ]
 }

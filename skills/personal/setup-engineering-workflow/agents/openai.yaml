@@ -1,0 +1,6 @@
+interface:
+  display_name: "Setup Engineering Workflow"
+  short_description: "Configure a repo for the engineering skill workflow"
+  default_prompt: "Use $setup-engineering-workflow to configure this repository for the engineering skills."
+policy:
+  allow_implicit_invocation: false

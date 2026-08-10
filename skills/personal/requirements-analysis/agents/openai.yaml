@@ -1,0 +1,4 @@
+interface:
+  display_name: "Requirements Analysis"
+  short_description: "Clarify and capture feature requirements before a PRD"
+  default_prompt: "Use $requirements-analysis to clarify this feature and capture the pre-PRD discussion."
