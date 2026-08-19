@@ -1,0 +1,129 @@
+{
+  "version": 1,
+  "skill": "run-ticket-plan",
+  "cases": [
+    {
+      "id": "explicit-without-mode-defaults-to-status",
+      "input": "Use $run-ticket-plan for /repo/.scratch/demo.",
+      "expected": {
+        "outcome": "STATUS",
+        "tool_calls": [
+          {"command": "status", "count": 1}
+        ]
+      },
+      "forbidden": {
+        "tool_calls": [
+          {"command": "next"},
+          {"command": "confirm"}
+        ],
+        "behaviors": ["mutate ticket or roadmap state"]
+      }
+    },
+    {
+      "id": "ambiguous-feature-root-stops",
+      "input": "Use $run-ticket-plan status where two .scratch feature roots are discoverable.",
+      "expected": {
+        "outcome": "STOP_AMBIGUOUS_FEATURE_ROOT",
+        "tool_calls": []
+      },
+      "forbidden": {
+        "tool_calls": [
+          {"command": "status"},
+          {"command": "next"}
+        ],
+        "behaviors": ["guess a feature root"]
+      }
+    },
+    {
+      "id": "blocking-requirement-without-safe-check-stops",
+      "input": "Use $run-ticket-plan next for a packet whose blocking requirement has no grounded safe check.",
+      "expected": {
+        "outcome": "CONTRACT_NOT_PLANABLE",
+        "tool_calls": [
+          {"command": "prepare-next", "count": 1}
+        ]
+      },
+      "forbidden": {
+        "tool_calls": [
+          {"command": "next"}
+        ],
+        "behaviors": ["invent a command, path, evidence, or requirement"]
+      }
+    },
+    {
+      "id": "next-stops-after-work-packet",
+      "input": "Use $run-ticket-plan next for an eligible Open ticket with a planable packet.",
+      "expected": {
+        "outcome": "WORK_PACKET",
+        "tool_calls": [
+          {"command": "prepare-next", "count": 1},
+          {"command": "next", "count": 1}
+        ]
+      },
+      "forbidden": {
+        "tool_calls": [],
+        "behaviors": ["implement or repair product code", "invoke an implementation agent"]
+      }
+    },
+    {
+      "id": "record-external-missing-evidence-input-stops",
+      "input": "Use $run-ticket-plan record-external 04 EXT-1 --reference artifact://report without an issuer.",
+      "expected": {
+        "outcome": "STOP_MISSING_INPUT",
+        "tool_calls": []
+      },
+      "forbidden": {
+        "tool_calls": [
+          {"command": "record-external"}
+        ],
+        "behaviors": ["infer a reference or issuer", "self-issue external evidence"]
+      }
+    },
+    {
+      "id": "reconcile-missing-reason-stops",
+      "input": "Use $run-ticket-plan reconcile 03 without a reason.",
+      "expected": {
+        "outcome": "STOP_MISSING_OPERATOR_REASON",
+        "tool_calls": []
+      },
+      "forbidden": {
+        "tool_calls": [
+          {"command": "reconcile"}
+        ],
+        "behaviors": ["author or substitute an operator reason"]
+      }
+    },
+    {
+      "id": "reconcile-success-returns-handoff-and-stops",
+      "input": "Use $run-ticket-plan reconcile 03 --reason 'Legacy completion lacks a structured receipt'.",
+      "expected": {
+        "outcome": "RECOVERY_HANDOFF",
+        "tool_calls": [
+          {"command": "reconcile", "count": 1}
+        ]
+      },
+      "forbidden": {
+        "tool_calls": [
+          {"command": "plan-check"},
+          {"command": "verify"},
+          {"command": "complete"}
+        ],
+        "behaviors": ["continue recovery in the same administrative action"]
+      }
+    },
+    {
+      "id": "confirm-remediate-does-not-edit-product",
+      "input": "Use $run-ticket-plan confirm 04 when the controller returns REMEDIATE.",
+      "expected": {
+        "outcome": "REMEDIATE_HANDOFF",
+        "tool_calls": [
+          {"command": "confirm", "count": 1}
+        ]
+      },
+      "forbidden": {
+        "tool_calls": [],
+        "behaviors": ["modify product source or tests", "retry with a changed implementation"]
+      }
+    }
+  ]
+}
