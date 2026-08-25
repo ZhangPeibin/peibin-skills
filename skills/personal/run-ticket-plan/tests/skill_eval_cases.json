@@ -3,126 +3,66 @@
   "skill": "run-ticket-plan",
   "cases": [
     {
-      "id": "explicit-without-mode-defaults-to-status",
-      "input": "Use $run-ticket-plan for /repo/.scratch/demo.",
+      "id": "omitted-mode-is-read-only-status",
+      "input": "Use $run-ticket-plan for /repo/.scratch/demo and report whether it is complete or deadlocked.",
       "expected": {
-        "outcome": "STATUS",
-        "tool_calls": [
-          {"command": "status", "count": 1}
-        ]
+        "outcome": "ACTIVE | READY | COMPLETE | DEADLOCK",
+        "tool_calls": [{"command": "status", "count": 1}]
       },
       "forbidden": {
-        "tool_calls": [
-          {"command": "next"},
-          {"command": "confirm"}
-        ],
-        "behaviors": ["mutate ticket or roadmap state"]
+        "tool_calls": [{"command": "next"}],
+        "behaviors": ["mutate a ticket, or treat an incomplete deadlock as complete"]
       }
     },
     {
-      "id": "ambiguous-feature-root-stops",
-      "input": "Use $run-ticket-plan status where two .scratch feature roots are discoverable.",
-      "expected": {
-        "outcome": "STOP_AMBIGUOUS_FEATURE_ROOT",
-        "tool_calls": []
-      },
-      "forbidden": {
-        "tool_calls": [
-          {"command": "status"},
-          {"command": "next"}
-        ],
-        "behaviors": ["guess a feature root"]
-      }
-    },
-    {
-      "id": "blocking-requirement-without-safe-check-stops",
-      "input": "Use $run-ticket-plan next for a packet whose blocking requirement has no grounded safe check.",
-      "expected": {
-        "outcome": "CONTRACT_NOT_PLANABLE",
-        "tool_calls": [
-          {"command": "prepare-next", "count": 1}
-        ]
-      },
-      "forbidden": {
-        "tool_calls": [
-          {"command": "next"}
-        ],
-        "behaviors": ["invent a command, path, evidence, or requirement"]
-      }
-    },
-    {
-      "id": "next-stops-after-work-packet",
-      "input": "Use $run-ticket-plan next for an eligible Open ticket with a planable packet.",
+      "id": "next-returns-work-packet-and-stops",
+      "input": "Use $run-ticket-plan next for the current feature.",
       "expected": {
         "outcome": "WORK_PACKET",
-        "tool_calls": [
-          {"command": "prepare-next", "count": 1},
-          {"command": "next", "count": 1}
-        ]
+        "tool_calls": [{"command": "next", "count": 1}]
       },
       "forbidden": {
         "tool_calls": [],
-        "behaviors": ["implement or repair product code", "invoke an implementation agent"]
+        "behaviors": ["implement product work or invoke an implementation agent"]
       }
     },
     {
-      "id": "record-external-missing-evidence-input-stops",
-      "input": "Use $run-ticket-plan record-external 04 EXT-1 --reference artifact://report without an issuer.",
+      "id": "confirm-preserves-fail-and-blocked-evidence",
+      "input": "Use $run-ticket-plan confirm 04. A local criterion fails and another needs unavailable independent approval.",
       "expected": {
-        "outcome": "STOP_MISSING_INPUT",
-        "tool_calls": []
-      },
-      "forbidden": {
+        "outcome": "PASS | FAIL | BLOCKED",
         "tool_calls": [
-          {"command": "record-external"}
-        ],
-        "behaviors": ["infer a reference or issuer", "self-issue external evidence"]
-      }
-    },
-    {
-      "id": "reconcile-missing-reason-stops",
-      "input": "Use $run-ticket-plan reconcile 03 without a reason.",
-      "expected": {
-        "outcome": "STOP_MISSING_OPERATOR_REASON",
-        "tool_calls": []
-      },
-      "forbidden": {
-        "tool_calls": [
-          {"command": "reconcile"}
-        ],
-        "behaviors": ["author or substitute an operator reason"]
-      }
-    },
-    {
-      "id": "reconcile-success-returns-handoff-and-stops",
-      "input": "Use $run-ticket-plan reconcile 03 --reason 'Legacy completion lacks a structured receipt'.",
-      "expected": {
-        "outcome": "RECOVERY_HANDOFF",
-        "tool_calls": [
-          {"command": "reconcile", "count": 1}
-        ]
-      },
-      "forbidden": {
-        "tool_calls": [
-          {"command": "plan-check"},
-          {"command": "verify"},
-          {"command": "complete"}
-        ],
-        "behaviors": ["continue recovery in the same administrative action"]
-      }
-    },
-    {
-      "id": "confirm-remediate-does-not-edit-product",
-      "input": "Use $run-ticket-plan confirm 04 when the controller returns REMEDIATE.",
-      "expected": {
-        "outcome": "REMEDIATE_HANDOFF",
-        "tool_calls": [
+          {"command": "prepare-confirm", "count": 1},
           {"command": "confirm", "count": 1}
         ]
       },
       "forbidden": {
+        "tool_calls": [{"command": "pass"}],
+        "behaviors": ["skip a criterion, edit product code, collapse BLOCKED into FAIL, invoke pass, or mark the ticket Done"]
+      }
+    },
+    {
+      "id": "pass-requires-explicit-manual-confirmation",
+      "input": "Use $run-ticket-plan pass 04 --note 'Verified on a physical device'.",
+      "expected": {
+        "outcome": "PASS",
+        "tool_calls": [{"command": "pass", "count": 1}]
+      },
+      "forbidden": {
+        "tool_calls": [{"command": "prepare-confirm"}, {"command": "confirm"}],
+        "behaviors": ["claim that automated verification ran"]
+      }
+    },
+    {
+      "id": "pause-binds-existing-recovery-inputs",
+      "input": "Ticket 05 and schema-2.0 handoff /repo/.scratch/demo/handoffs/01.md already exist. Use $run-ticket-plan pause 01 --until 05 --reason 'The focused test fails' --handoff-file /repo/.scratch/demo/handoffs/01.md.",
+      "expected": {
+        "outcome": "PAUSED",
+        "tool_calls": [{"command": "pause", "count": 1}]
+      },
+      "forbidden": {
         "tool_calls": [],
-        "behaviors": ["modify product source or tests", "retry with a changed implementation"]
+        "behaviors": ["create ticket 05, generate another handoff, reverse the dependency, or implement work"]
       }
     }
   ]

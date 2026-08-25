@@ -4,18 +4,22 @@ import argparse
 import importlib.util
 import json
 import re
-import shlex
 import sys
 import unittest
 from pathlib import Path
 
 SKILL_ROOT = Path(__file__).parents[1]
-REPO_ROOT = SKILL_ROOT.parents[2]
 SKILL_PATH = SKILL_ROOT / "SKILL.md"
 OPENAI_PATH = SKILL_ROOT / "agents" / "openai.yaml"
-README_PATH = REPO_ROOT / "README.md"
 EVAL_CASES_PATH = Path(__file__).with_name("skill_eval_cases.json")
 RESULT_CONTRACT_PATH = SKILL_ROOT / "references" / "result-contract.md"
+RECOVERY_CONTRACT_PATH = SKILL_ROOT / "references" / "recovery-contract.md"
+OUTPUT_CONTRACT_PATH = SKILL_ROOT / "references" / "output-contract.md"
+CONTRACT_PATHS = (
+    OUTPUT_CONTRACT_PATH,
+    RESULT_CONTRACT_PATH,
+    RECOVERY_CONTRACT_PATH,
+)
 SCRIPT = SKILL_ROOT / "scripts" / "ticketctl.py"
 
 SPEC = importlib.util.spec_from_file_location("ticketctl_skill_contract", SCRIPT)
@@ -46,155 +50,77 @@ def _command_parsers() -> dict[str, argparse.ArgumentParser]:
     return subparsers.choices
 
 
-def _required_options(command: str) -> set[str]:
-    return {
-        action.dest
-        for action in _command_parsers()[command]._actions
-        if getattr(action, "required", False)
-    }
-
-
 class SkillContractTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.skill = SKILL_PATH.read_text(encoding="utf-8")
         cls.openai = OPENAI_PATH.read_text(encoding="utf-8")
 
-    def test_cross_runtime_invocation_is_explicit_only(self) -> None:
-        self.assertEqual(_frontmatter(self.skill)["disable-model-invocation"], "true")
-        self.assertRegex(
-            self.openai,
-            r"(?m)^policy:\n  allow_implicit_invocation: false$",
-        )
+    def test_metadata_keeps_explicit_invocation(self) -> None:
+        frontmatter = _frontmatter(self.skill)
+        self.assertEqual(frontmatter["name"], "run-ticket-plan")
+        self.assertEqual(frontmatter["disable-model-invocation"], "true")
+        self.assertIn("allow_implicit_invocation: false", self.openai)
 
-    def test_default_prompt_uses_a_public_primary_mode(self) -> None:
-        primary = self._primary_modes()
-        match = re.search(
-            r'(?m)^  default_prompt: "Use \$run-ticket-plan ([a-z-]+)\b',
-            self.openai,
-        )
-        self.assertIsNotNone(match)
-        assert match is not None
-        self.assertIn(match.group(1), primary)
-
-    def test_omitted_mode_maps_to_status(self) -> None:
-        self.assertRegex(
-            self.skill,
-            r"(?i)explicit invocation omits the mode[^.\n]*run `status`",
-        )
-
-    def test_readme_preserves_the_product_implementation_boundary(self) -> None:
-        row = next(
-            line
-            for line in README_PATH.read_text(encoding="utf-8").splitlines()
-            if line.startswith("| [run-ticket-plan]")
-        )
-        self.assertIn("不直接实现产品代码", row)
-
-    def test_primary_workflow_is_status_next_confirm(self) -> None:
-        self.assertEqual(self._primary_modes(), ["status", "next", "confirm"])
-
-    def test_record_external_signature_matches_required_parser_inputs(self) -> None:
-        signature = self._administrative_signature("record-external")
-        tokens = shlex.split(signature)
-        self.assertIn("<ticket>", tokens)
-        self.assertIn("<check>", tokens)
-        self.assertIn("--result", tokens)
-        self.assertEqual(tokens[tokens.index("--result") + 1], "PASS")
-        self.assertIn("--reference", tokens)
-        self.assertIn("--issuer", tokens)
+    def test_command_surface_matches_the_skill(self) -> None:
+        mode_block = self.skill.split("## Modes", 1)[1].split("## Confirm", 1)[0]
+        modes = re.findall(r"(?m)^- `([a-z]+)", mode_block)
+        self.assertEqual(modes, ["status", "next", "confirm", "pass", "pause"])
+        commands = _command_parsers()
+        required_by_command = {
+            name: {
+                action.dest
+                for action in parser._actions
+                if getattr(action, "required", False)
+            }
+            for name, parser in commands.items()
+        }
         self.assertEqual(
-            _required_options("record-external"),
-            {"feature_root", "ticket", "check", "result", "reference", "issuer"},
+            required_by_command,
+            {
+                "status": {"feature_root"},
+                "next": {"feature_root"},
+                "pause": {"feature_root", "reason"},
+                "pass": {"feature_root"},
+                "prepare-confirm": {"feature_root"},
+                "confirm": {"feature_root", "result_file"},
+            },
         )
 
-    def test_reconcile_public_contract_requires_operator_reason(self) -> None:
-        signature = self._administrative_signature("reconcile")
-        self.assertIn("--reason <operator-reason>", signature)
-        contract = next(
-            paragraph
-            for paragraph in self.skill.split("\n\n")
-            if paragraph.startswith("For `reconcile`,")
+    def test_references_define_one_versioned_contract_surface(self) -> None:
+        links = set(re.findall(r"references/[a-z-]+\.md", self.skill))
+        self.assertEqual(
+            links,
+            {
+                "references/output-contract.md",
+                "references/result-contract.md",
+                "references/recovery-contract.md",
+            },
         )
-        self.assertIn("non-empty reason supplied by the operator", contract)
-        self.assertIn("never author or substitute the reason", contract)
-        self.assertIn("end this administrative action", contract)
-        self.assertEqual(_required_options("reconcile"), {"feature_root", "ticket"})
+        contract = OUTPUT_CONTRACT_PATH.read_text(encoding="utf-8")
+        for field in ticketctl._response("status", "READY"):
+            self.assertIn(f'"{field}"', contract)
+        self.assertEqual(ticketctl.OUTPUT_SCHEMA_VERSION, 1)
 
-    def test_reconcile_reference_preserves_cli_compatibility_and_public_safety(
-        self,
-    ) -> None:
-        contract = RESULT_CONTRACT_PATH.read_text(encoding="utf-8")
-        self.assertIn("low-level compatibility interface", contract)
-        self.assertIn("accept an omitted `--reason`", contract)
-        self.assertIn("public Skill action requires a non-empty operator-supplied reason", contract)
-        self.assertIn("controller's `next` value as the recovery handoff", contract)
+    def test_instruction_context_stays_within_budget(self) -> None:
+        references = [path.read_text(encoding="utf-8") for path in CONTRACT_PATHS]
+        self.assertLessEqual(len(self.skill.splitlines()), 40)
+        self.assertLessEqual(len(" ".join([self.skill, *references]).split()), 1_400)
 
-    def test_removed_mode_migration_has_one_authoritative_definition(self) -> None:
-        self.assertEqual(self.skill.count("`run`"), 1)
-        self.assertEqual(self.skill.count("`continue`"), 1)
-        migration = next(
-            paragraph
-            for paragraph in self.skill.split("\n\n")
-            if paragraph.startswith("Return a concise migration message")
-        )
-        for replacement in ("`status`", "`next`", "`confirm`"):
-            self.assertIn(replacement, migration)
-
-    def test_referenced_controller_commands_exist(self) -> None:
-        referenced = set(re.findall(r"ticketctl\.py ([a-z][a-z-]+)", self.skill))
-        self.assertTrue(referenced)
-        self.assertEqual(referenced - set(_command_parsers()), set())
-
-    def test_local_eval_cases_are_structured_and_complete(self) -> None:
+    def test_eval_cases_cover_each_public_mode(self) -> None:
         payload = json.loads(EVAL_CASES_PATH.read_text(encoding="utf-8"))
         self.assertEqual(payload["version"], 1)
         self.assertEqual(payload["skill"], "run-ticket-plan")
         cases = payload["cases"]
-        expected_ids = {
-            "explicit-without-mode-defaults-to-status",
-            "ambiguous-feature-root-stops",
-            "blocking-requirement-without-safe-check-stops",
-            "next-stops-after-work-packet",
-            "record-external-missing-evidence-input-stops",
-            "reconcile-missing-reason-stops",
-            "reconcile-success-returns-handoff-and-stops",
-            "confirm-remediate-does-not-edit-product",
-        }
-        self.assertEqual({case["id"] for case in cases}, expected_ids)
         commands = set(_command_parsers())
+        observed: set[str] = set()
         for case in cases:
-            with self.subTest(case=case["id"]):
-                self.assertIsInstance(case["input"], str)
-                self.assertTrue(case["input"].strip())
-                self.assertTrue(case["expected"]["outcome"])
-                self.assertIsInstance(case["expected"]["tool_calls"], list)
-                self.assertIsInstance(case["forbidden"]["tool_calls"], list)
-                self.assertIsInstance(case["forbidden"]["behaviors"], list)
-                self.assertTrue(case["forbidden"]["behaviors"])
-                for call in (
-                    case["expected"]["tool_calls"]
-                    + case["forbidden"]["tool_calls"]
-                ):
-                    self.assertIn(call["command"], commands)
-                    if "count" in call:
-                        self.assertGreater(call["count"], 0)
-
-    @classmethod
-    def _primary_modes(cls) -> list[str]:
-        block = cls.skill.split(
-            "Keep these explicit administrative actions", 1
-        )[0].split("Map the primary workflow to one mode:", 1)[1]
-        return re.findall(r"(?m)^- `([a-z-]+)(?: [^`]*)?`:", block)
-
-    @classmethod
-    def _administrative_signature(cls, command: str) -> str:
-        match = re.search(
-            rf"(?m)^- `({re.escape(command)} [^`]+)`:", cls.skill
-        )
-        if match is None:
-            raise AssertionError(f"missing public signature for {command}")
-        return match.group(1)
+            self.assertTrue(case["expected"]["outcome"])
+            for call in case["expected"]["tool_calls"]:
+                self.assertIn(call["command"], commands)
+                observed.add(call["command"])
+            self.assertTrue(case["forbidden"]["behaviors"])
+        self.assertTrue({"status", "next", "confirm", "pass", "pause"} <= observed)
 
 
 if __name__ == "__main__":

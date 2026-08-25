@@ -1,6 +1,6 @@
 interface:
   display_name: "Run Ticket Plan"
-  short_description: "Control ticket activation and confirmation"
-  default_prompt: "Use $run-ticket-plan status to inspect the current ticket state before activation."
+  short_description: "Advance a local ticket DAG with minimal state"
+  default_prompt: "Use $run-ticket-plan status to inspect the current ticket DAG."
 policy:
   allow_implicit_invocation: false
