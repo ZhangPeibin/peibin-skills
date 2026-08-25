@@ -14,7 +14,8 @@
 | [to-feature-doc](./skills/personal/to-feature-doc/) | 基于真实代码为现有功能模块生成新人 onboarding 文档 | 需要为某个功能/模块写设计说明文档 |
 | [requirements-analysis](./skills/personal/requirements-analysis/) | 通过逐项追问澄清 Feature，并持续维护 pre-PRD 讨论文档 | 需求尚未清晰、需要保留讨论和决策上下文 |
 | [setup-engineering-workflow](./skills/personal/setup-engineering-workflow/) | 为工程 Skill 配置 issue tracker、标签、领域文档和 pre-PRD Feature 文档 | 首次在仓库中使用开发工作流 |
-| [run-ticket-plan](./skills/personal/run-ticket-plan/) | 按正式 Local Markdown ticket contract 激活、验证并推进当前 frontier，不直接实现产品代码 | 查看 ticket 状态或 frontier、激活下一张 ticket、确认独立实现结果、处理完成状态或外部证据 |
+| [run-ticket-plan](./skills/personal/run-ticket-plan/) | 直接消费 `to-tickets` 的本地 ticket DAG，以轻量状态推进任务而不实现产品代码 | 查看 frontier、领取或暂停 ticket、自动验证或手动确认完成 |
+| [handoff](./skills/personal/handoff/) | 把当前会话压缩成可恢复、可验证的版本化 Markdown 交接物 | 用户显式调用 `$handoff`，或编排器显式请求 artifact-only 交接 |
 | [init-flutter-app](./skills/personal/flutter/init-flutter-app/) | 从 flutter-template（GitHub 或本地）脚手架新 Flutter 应用 | 要用模板初始化 Flutter 项目 |
 | [add-flutter-feature](./skills/personal/flutter/add-flutter-feature/) | 在 flutter-template 派生项目里按规范新增一个 feature（生成器 + playbook + make check） | 要给这类 Flutter 项目加功能 |
 
@@ -25,6 +26,10 @@
 [Matt Pocock Skills](./skills/vendor/mattpocock/) 来自本地 fork，当前筛选保留 21 个 Skill。来源版本记录在 [`SOURCE.json`](./skills/vendor/mattpocock/SOURCE.json)，原 MIT 许可证保存在同一目录。
 
 vendor 内容默认不随插件加载。目前启用了 [`writing-great-skills`](./skills/vendor/mattpocock/productivity/writing-great-skills/)，以及由 `grill-with-docs`、`to-spec`、`to-tickets`、`implement`、`tdd`、`code-review` 组成的开发主流程。主流程同时启用 personal 的 `setup-engineering-workflow` 和 `requirements-analysis`，以及 `grill-with-docs` 依赖的 `grilling` 和 `domain-modeling`；其他 Skill 保留源码，等实际需要时再逐个加入插件清单。
+
+personal 与 vendor 源码中各有一个名为 `handoff` 的 Skill。personal 版本是本仓库的 canonical 版本；vendor `handoff` 仅作为参考源码，不随 Claude Code 插件加载。
+
+`handoff` 默认生成完整交接；高频续接可用 `$handoff --compact`。两种内容档位都支持只返回 Markdown：`$handoff --artifact-only` 与 `$handoff --compact --artifact-only`。
 
 ### Workflow
 
@@ -84,11 +89,18 @@ ln -s /path/to/peibin-skills/skills/personal/to-feature-doc ~/.cursor/skills/to-
 ln -s /path/to/peibin-skills/skills/personal/requirements-analysis ~/.cursor/skills/requirements-analysis
 ln -s /path/to/peibin-skills/skills/personal/setup-engineering-workflow ~/.cursor/skills/setup-engineering-workflow
 ln -s /path/to/peibin-skills/skills/personal/run-ticket-plan ~/.cursor/skills/run-ticket-plan
+ln -s /path/to/peibin-skills/skills/personal/handoff ~/.cursor/skills/handoff
 ln -s /path/to/peibin-skills/skills/personal/flutter/init-flutter-app ~/.cursor/skills/init-flutter-app
 ln -s /path/to/peibin-skills/skills/personal/flutter/add-flutter-feature ~/.cursor/skills/add-flutter-feature
 ```
 
-也可以使用 `npx skills add /path/to/peibin-skills --full-depth` 安装到项目的 `.agents/skills/`。实际安装流程会按需更新 `skills-lock.json`。
+使用 `npx skills` 安装 personal `handoff` 时，必须直接指定其目录；该命令已在隔离项目中验证，安装来源会明确指向 personal 版本：
+
+```bash
+npx skills add /path/to/peibin-skills/skills/personal/handoff --agent codex --copy -y
+```
+
+不要通过仓库根目录的 `--full-depth` discovery 安装 `handoff`：installer 会按名称去重 personal/vendor 同名项，列表不能证明选择了哪个来源。根目录安装仍可用于显式列出且没有同名冲突的 Skill；实际安装流程会按需更新 `skills-lock.json`。
 
 只安装开发主流程及其依赖：
 
@@ -115,6 +127,7 @@ peibin-skills/
 │   │   ├── requirements-analysis/
 │   │   ├── setup-engineering-workflow/
 │   │   ├── run-ticket-plan/
+│   │   ├── handoff/
 │   │   └── flutter/
 │   │       ├── init-flutter-app/
 │   │       └── add-flutter-feature/
