@@ -1,0 +1,6 @@
+interface:
+  display_name: "Handoff"
+  short_description: "Create a full or compact resumable handoff"
+  default_prompt: "Use $handoff for a full handoff or $handoff --compact for a concise handoff."
+policy:
+  allow_implicit_invocation: false

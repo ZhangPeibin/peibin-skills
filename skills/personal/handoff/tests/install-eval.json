@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "date": "2026-08-24",
+  "platform": "Darwin arm64",
+  "skills_cli_version": "1.5.23",
+  "source_path": "skills/personal/handoff",
+  "root_discovery": {
+    "command": "npx skills add /path/to/peibin-skills --full-depth --list",
+    "found_skill_count": 30,
+    "handoff_entries": 1,
+    "duplicate_source_paths": [
+      "skills/personal/handoff",
+      "skills/vendor/mattpocock/productivity/handoff"
+    ],
+    "observation": "Root discovery reported one name-deduplicated handoff entry, so it cannot prove which same-name source would be installed."
+  },
+  "install_command": "npx skills add /path/to/peibin-skills/skills/personal/handoff --agent codex --copy -y",
+  "installed_list": {
+    "name": "handoff",
+    "scope": "project",
+    "source": "skills/personal/handoff",
+    "source_type": "local",
+    "agents": [
+      "Codex",
+      "Cursor",
+      "Gemini CLI",
+      "GitHub Copilot",
+      "OpenCode"
+    ]
+  },
+  "installed_hashes": {
+    "SKILL.md": "4d413c59a4a75318241e862559989eda8808eeb0ab9f8bb1dd3e966509eff236",
+    "agents/openai.yaml": "7ac0e43640092d5c7f829227b5005d3a5d5cd828afbb643ab64895cf04a96287",
+    "references/full-protocol.md": "f979c85553cf0cbbf289a0b99390249cc6a25cc3600a8ab06fb499330b9135cc",
+    "references/payloads.md": "c6378ec9f53f5278b275f07200679d17d239b5f9e1f90d8da708b9627956ad1b",
+    "scripts/publish_handoff.py": "18f5c8b16b0f18372ca62dc6aa06178b8cdcd85d7db7c9c42fb955ffbc2187a2",
+    "scripts/validate_handoff.py": "fa523c4d5941d257df0769a226d426ad852629df05a954fd9cc545349d96e149"
+  },
+  "remove_command": "npx skills remove handoff -y",
+  "after_remove": {
+    "skill_directory_exists": false,
+    "lock_entry_exists": false,
+    "list": []
+  }
+}
