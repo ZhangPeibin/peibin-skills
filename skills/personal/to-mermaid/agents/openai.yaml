@@ -1,0 +1,4 @@
+interface:
+  display_name: "To Mermaid"
+  short_description: "Create Markdown-safe Mermaid diagrams"
+  default_prompt: "Use $to-mermaid to turn this workflow into a Mermaid diagram that renders in Markdown."

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Init Flutter App"
+  short_description: "Scaffold a Flutter app from flutter-template"
+  default_prompt: "Use $init-flutter-app to scaffold a new Flutter app from flutter-template."
+policy:
+  allow_implicit_invocation: false

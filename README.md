@@ -100,7 +100,7 @@ ln -s /path/to/peibin-skills/skills/personal/flutter/add-flutter-feature ~/.curs
 npx skills add /path/to/peibin-skills/skills/personal/handoff --agent codex --copy -y
 ```
 
-不要通过仓库根目录的 `--full-depth` discovery 安装 `handoff`：installer 会按名称去重 personal/vendor 同名项，列表不能证明选择了哪个来源。根目录安装仍可用于显式列出且没有同名冲突的 Skill；实际安装流程会按需更新 `skills-lock.json`。
+不要通过仓库根目录的 `--full-depth` discovery 安装 `handoff`：installer 会按名称去重 personal/vendor 同名项，列表不能证明选择了哪个来源。根目录安装仍可用于显式列出且没有同名冲突的 Skill。installer 会在执行命令的目标项目中按需创建或更新 `skills-lock.json`；本来源仓库不维护该消费端锁文件。
 
 只安装开发主流程及其依赖：
 
@@ -135,7 +135,6 @@ peibin-skills/
 │       └── mattpocock/
 │           ├── engineering/
 │           └── productivity/
-├── skills-lock.json
 └── README.md
 ```
 
@@ -143,8 +142,9 @@ peibin-skills/
 
 1. 在 `skills/personal/` 下新建目录，例如 `skills/personal/my-skill/`
 2. 编写 `SKILL.md`（含 YAML frontmatter：`name`、`description`）
-3. 在 `.claude-plugin/plugin.json` 的 `skills` 数组中注册路径
-4. 如需同步 `npx skills` 安装结果：重新 `npx skills add` 并更新 `skills-lock.json`
+3. 添加 `agents/openai.yaml`，保持展示信息与 Skill 行为一致；显式调用的 Skill 同时设置 `allow_implicit_invocation: false`
+4. 在 `.claude-plugin/plugin.json` 的 `skills` 数组中注册路径
+5. 更新 README 中的 Personal Skills 目录和相关安装说明
 
 收录第三方 Skill 时放入 `skills/vendor/<owner>/`，同时保留许可证，并记录上游仓库和具体 revision。
 

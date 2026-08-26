@@ -1,0 +1,6 @@
+interface:
+  display_name: "To Commits"
+  short_description: "Create well-scoped Conventional Commits"
+  default_prompt: "Use $to-commits to group and commit the current uncommitted changes."
+policy:
+  allow_implicit_invocation: false

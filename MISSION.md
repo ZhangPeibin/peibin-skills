@@ -1,17 +1,20 @@
-# Mission: Design a reliable Git-to-PR skill
+# Mission: Maintain a reliable AI Agent skill library
 
-## Why
-Improve this repository's `to-pr` skill so it can turn Git history into an accurate pull request without confusing code changes, engineering intent, and verification evidence.
+## Purpose
+
+Build a curated collection of predictable, reusable Skills for day-to-day software engineering. Personal Skills are maintained here; vendor Skills retain clear provenance and are enabled only when they add value to the active workflow.
+
+## Principles
+
+- Keep Skill instructions focused, explicit about permissions, and grounded in repository facts.
+- Keep personal and vendor ownership boundaries visible.
+- Treat the plugin manifest, catalog, and UI metadata as one synchronized public interface.
+- Use tests and deterministic scripts when behavior is stateful, destructive, or otherwise fragile.
+- Prefer a small, deliberate active Skill set over enabling every collected Skill.
 
 ## Success looks like
-- Explain how commits, branches, `git log`, `git diff`, and pull requests relate.
-- Predict what `git log base..head` and `git diff base...head` select.
-- Decide which PR claims are supported by Git and which require an issue, PRD, test output, or user confirmation.
 
-## Constraints
-- Keep lessons practical and tied to the current `to-pr` implementation.
-- Prefer official Git and GitHub documentation as sources.
-
-## Out of scope
-- Advanced merge and rebase strategies.
-- General Git administration unrelated to pull requests.
+- Every personal Skill has valid frontmatter and consistent OpenAI UI metadata.
+- Every registered plugin path exists, and the README accurately describes the enabled workflow.
+- Vendor sources record their upstream revision and license.
+- Generated files do not dirty the working tree, and obsolete project-level guidance is removed promptly.

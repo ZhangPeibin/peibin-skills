@@ -1,0 +1,6 @@
+interface:
+  display_name: "Add Flutter Feature"
+  short_description: "Add a layered feature to a template Flutter app"
+  default_prompt: "Use $add-flutter-feature to add the profile feature to this Flutter app."
+policy:
+  allow_implicit_invocation: false

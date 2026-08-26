@@ -1,0 +1,6 @@
+interface:
+  display_name: "To Feature Doc"
+  short_description: "Document an existing feature from its source code"
+  default_prompt: "Use $to-feature-doc to document an existing feature for a new engineer."
+policy:
+  allow_implicit_invocation: false
