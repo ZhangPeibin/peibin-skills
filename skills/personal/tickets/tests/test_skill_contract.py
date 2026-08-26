@@ -12,12 +12,10 @@ SKILL_ROOT = Path(__file__).parents[1]
 SKILL_PATH = SKILL_ROOT / "SKILL.md"
 OPENAI_PATH = SKILL_ROOT / "agents" / "openai.yaml"
 EVAL_CASES_PATH = Path(__file__).with_name("skill_eval_cases.json")
-RESULT_CONTRACT_PATH = SKILL_ROOT / "references" / "result-contract.md"
 RECOVERY_CONTRACT_PATH = SKILL_ROOT / "references" / "recovery-contract.md"
 OUTPUT_CONTRACT_PATH = SKILL_ROOT / "references" / "output-contract.md"
 CONTRACT_PATHS = (
     OUTPUT_CONTRACT_PATH,
-    RESULT_CONTRACT_PATH,
     RECOVERY_CONTRACT_PATH,
 )
 SCRIPT = SKILL_ROOT / "scripts" / "ticketctl.py"
@@ -58,14 +56,15 @@ class SkillContractTest(unittest.TestCase):
 
     def test_metadata_keeps_explicit_invocation(self) -> None:
         frontmatter = _frontmatter(self.skill)
-        self.assertEqual(frontmatter["name"], "run-ticket-plan")
+        self.assertEqual(frontmatter["name"], "tickets")
         self.assertEqual(frontmatter["disable-model-invocation"], "true")
         self.assertIn("allow_implicit_invocation: false", self.openai)
+        self.assertIn("$tickets", self.openai)
 
     def test_command_surface_matches_the_skill(self) -> None:
-        mode_block = self.skill.split("## Modes", 1)[1].split("## Confirm", 1)[0]
+        mode_block = self.skill.split("## Modes", 1)[1].split("## State Rules", 1)[0]
         modes = re.findall(r"(?m)^- `([a-z]+)", mode_block)
-        self.assertEqual(modes, ["status", "next", "confirm", "pass", "pause"])
+        self.assertEqual(modes, ["status", "next", "done", "pause"])
         commands = _command_parsers()
         required_by_command = {
             name: {
@@ -81,11 +80,16 @@ class SkillContractTest(unittest.TestCase):
                 "status": {"feature_root"},
                 "next": {"feature_root"},
                 "pause": {"feature_root", "reason"},
-                "pass": {"feature_root"},
-                "prepare-confirm": {"feature_root"},
-                "confirm": {"feature_root", "result_file"},
+                "done": {"feature_root"},
             },
         )
+        pause_options = {
+            option
+            for action in commands["pause"]._actions
+            for option in action.option_strings
+        }
+        self.assertIn("--wait-for", pause_options)
+        self.assertIn("--until", pause_options)
 
     def test_references_define_one_versioned_contract_surface(self) -> None:
         links = set(re.findall(r"references/[a-z-]+\.md", self.skill))
@@ -93,14 +97,21 @@ class SkillContractTest(unittest.TestCase):
             links,
             {
                 "references/output-contract.md",
-                "references/result-contract.md",
                 "references/recovery-contract.md",
             },
         )
         contract = OUTPUT_CONTRACT_PATH.read_text(encoding="utf-8")
         for field in ticketctl._response("status", "READY"):
             self.assertIn(f'"{field}"', contract)
-        self.assertEqual(ticketctl.OUTPUT_SCHEMA_VERSION, 1)
+        self.assertEqual(ticketctl.OUTPUT_SCHEMA_VERSION, 2)
+
+    def test_storage_identifiers_remain_backward_compatible(self) -> None:
+        self.assertEqual(
+            ticketctl.STATE_START, "<!-- run-ticket-plan:state:start -->"
+        )
+        self.assertEqual(ticketctl.STATE_END, "<!-- run-ticket-plan:state:end -->")
+        source = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('f"run-ticket-plan-{safe_name}.lock"', source)
 
     def test_instruction_context_stays_within_budget(self) -> None:
         references = [path.read_text(encoding="utf-8") for path in CONTRACT_PATHS]
@@ -110,7 +121,7 @@ class SkillContractTest(unittest.TestCase):
     def test_eval_cases_cover_each_public_mode(self) -> None:
         payload = json.loads(EVAL_CASES_PATH.read_text(encoding="utf-8"))
         self.assertEqual(payload["version"], 1)
-        self.assertEqual(payload["skill"], "run-ticket-plan")
+        self.assertEqual(payload["skill"], "tickets")
         cases = payload["cases"]
         commands = set(_command_parsers())
         observed: set[str] = set()
@@ -120,7 +131,7 @@ class SkillContractTest(unittest.TestCase):
                 self.assertIn(call["command"], commands)
                 observed.add(call["command"])
             self.assertTrue(case["forbidden"]["behaviors"])
-        self.assertTrue({"status", "next", "confirm", "pass", "pause"} <= observed)
+        self.assertTrue({"status", "next", "done", "pause"} <= observed)
 
 
 if __name__ == "__main__":

@@ -35,15 +35,7 @@ DATA_KEYS_BY_COMMAND = {
     },
     "next": {"roadmap", "work_packet"},
     "pause": {"reason", "waits_for", "handoff", "roadmap", "frontier"},
-    "pass": {"completion", "roadmap", "frontier", "resumable"},
-    "prepare-confirm": {
-        "repository_root",
-        "ticket_path",
-        "title",
-        "objective",
-        "acceptance_criteria",
-    },
-    "confirm": {"summary", "criteria", "roadmap", "frontier", "resumable"},
+    "done": {"completion", "roadmap", "frontier", "resumable"},
 }
 SPEC = importlib.util.spec_from_file_location("ticketctl", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
@@ -147,47 +139,6 @@ class TicketCtlTest(unittest.TestCase):
             self.assertEqual(set(payload["data"]), DATA_KEYS_BY_COMMAND[command])
         return payload, completed.stdout
 
-    def result_file(
-        self,
-        ticket_id: str,
-        criteria: tuple[str, ...],
-        *,
-        failing: set[str] | None = None,
-    ) -> Path:
-        failing = failing or set()
-        path = self.root / f"confirm-{ticket_id}.json"
-        path.write_text(
-            json.dumps(
-                {
-                    "version": 1,
-                    "ticket": ticket_id,
-                    "summary": "Independent verification completed.",
-                    "criteria": [
-                        {
-                            "criterion": criterion,
-                            "result": "FAIL" if criterion in failing else "PASS",
-                            "evidence": f"Evidence for {criterion}",
-                        }
-                        for criterion in criteria
-                    ],
-                }
-            ),
-            encoding="utf-8",
-        )
-        return path
-
-    def submit_result(
-        self,
-        ticket_id: str,
-        criteria: tuple[str, ...],
-        *,
-        failing: set[str] | None = None,
-    ) -> dict[str, object]:
-        path = self.result_file(ticket_id, criteria, failing=failing)
-        return self.run_cli(
-            "confirm", "--ticket", ticket_id, "--result-file", str(path)
-        )[0]
-
     def handoff_file(self, ticket_id: str) -> Path:
         path = self.fixture.feature / "handoffs" / f"{ticket_id}.md"
         path.parent.mkdir()
@@ -211,7 +162,7 @@ Complete ticket {ticket_id}.
 
         payload, stdout = self.run_cli("status")
 
-        self.assertEqual(payload["schema_version"], 1)
+        self.assertEqual(payload["schema_version"], 2)
         self.assertEqual(payload["command"], "status")
         self.assertEqual(payload["outcome"], "READY")
         self.assertIsNone(payload["ticket"])
@@ -220,7 +171,7 @@ Complete ticket {ticket_id}.
         self.assertEqual(
             payload["next"],
             {
-                "command": "run-ticket-plan next 01",
+                "command": "tickets next 01",
                 "reason": "oldest executable ticket",
             },
         )
@@ -249,7 +200,7 @@ Complete ticket {ticket_id}.
         active, _ = self.run_cli("status")
         self.assertEqual(active["outcome"], "ACTIVE")
 
-        self.run_cli("pass", "--note", "Explicitly accepted.")
+        self.run_cli("done", "--note", "Explicitly completed.")
         complete, _ = self.run_cli("status")
         self.assertEqual(complete["outcome"], "COMPLETE")
         self.assertIsNone(complete["next"])
@@ -266,7 +217,7 @@ Complete ticket {ticket_id}.
 
         activated, _ = self.run_cli("next")
 
-        self.assertEqual(activated["schema_version"], 1)
+        self.assertEqual(activated["schema_version"], 2)
         self.assertEqual(activated["command"], "next")
         self.assertEqual(activated["outcome"], "WORK_PACKET")
         self.assertEqual(activated["ticket"], "01")
@@ -275,8 +226,8 @@ Complete ticket {ticket_id}.
         self.assertEqual(
             activated["next"],
             {
-                "command": "run-ticket-plan confirm 01",
-                "reason": "confirm after implementation",
+                "command": "$implement",
+                "reason": "implement the active ticket",
             },
         )
         packet = activated["data"]["work_packet"]
@@ -289,7 +240,6 @@ Complete ticket {ticket_id}.
                 "acceptance_criteria",
                 "boundaries",
                 "history",
-                "confirm",
             },
         )
         self.assertEqual(
@@ -328,7 +278,6 @@ Complete ticket {ticket_id}.
             packet["history"],
             {"last_pause": None, "last_confirmation": None, "handoff": None},
         )
-        self.assertEqual(packet["confirm"], "run-ticket-plan confirm 01")
         self.assertEqual(
             activated["data"]["roadmap"],
             {"state": "CURRENT", "changed": True, "created": True},
@@ -474,14 +423,10 @@ The paragraph criterion passes.
             )
         )
 
-    def test_failed_confirm_can_pause_for_remediation_and_resume(self) -> None:
+    def test_paused_ticket_resumes_after_remediation_is_done(self) -> None:
         criteria = ("The focused check passes.",)
         parent = self.fixture.add_ticket("01", criteria=criteria)
         self.run_cli("next", "--ticket", "01")
-        failed = self.submit_result("01", criteria, failing=set(criteria))
-
-        self.assertEqual(failed["outcome"], "FAIL")
-        self.assertTrue(failed["changed"])
 
         remediation = self.fixture.add_ticket(
             "05",
@@ -493,7 +438,7 @@ The paragraph criterion passes.
             "pause",
             "--ticket",
             "01",
-            "--until",
+            "--wait-for",
             "05",
             "--reason",
             "The focused check failed.",
@@ -509,7 +454,7 @@ The paragraph criterion passes.
 
         selected, _ = self.run_cli("next")
         self.assertEqual(selected["ticket"], "05")
-        self.run_cli("pass", "--ticket", "05", "--note", "Repair verified manually.")
+        self.run_cli("done", "--ticket", "05", "--note", "Repair completed.")
         status, _ = self.run_cli("status")
         self.assertEqual(status["data"]["resumable"], ["01"])
 
@@ -540,7 +485,8 @@ The paragraph criterion passes.
         self.assertEqual(paused["data"]["handoff"], str(handoff.resolve()))
         status, _ = self.run_cli("status")
         self.assertEqual(status["data"]["handoffs"], {"01": str(handoff.resolve())})
-        resumed, _ = self.run_cli("next")
+        self.assertEqual(status["data"]["resumable"], [])
+        resumed, _ = self.run_cli("next", "--ticket", "01")
         self.assertEqual(
             resumed["data"]["work_packet"]["history"]["handoff"],
             str(handoff.resolve()),
@@ -575,7 +521,7 @@ The paragraph criterion passes.
             "01",
             "--reason",
             "Focused verification failed.",
-            "--until",
+            "--wait-for",
             "05",
         )
 
@@ -602,7 +548,7 @@ The paragraph criterion passes.
         self.assertEqual(
             first["next"],
             {
-                "command": "run-ticket-plan next 05",
+                "command": "tickets next 05",
                 "reason": "oldest executable ticket",
             },
         )
@@ -654,6 +600,24 @@ The paragraph criterion passes.
         self.assertFalse(rejected["changed"])
         self.assertIn("**Status:** in-progress", ticket.read_text(encoding="utf-8"))
 
+    def test_pause_rejects_a_ticket_that_is_not_active(self) -> None:
+        self.fixture.add_ticket("01")
+
+        rejected, _ = self.run_cli(
+            "pause",
+            "--ticket",
+            "01",
+            "--reason",
+            "Pause requested.",
+            expected=2,
+        )
+
+        self.assertEqual(rejected["error"]["code"], "TICKET_NOT_ACTIVE")
+        self.assertEqual(
+            rejected["error"]["details"],
+            {"status": "ready-for-agent", "active": None},
+        )
+
     def test_pause_rejects_a_remediation_cycle(self) -> None:
         self.fixture.add_ticket("01")
         self.fixture.add_ticket("05", blocked_by="01 - Parent")
@@ -663,7 +627,7 @@ The paragraph criterion passes.
             "pause",
             "--ticket",
             "01",
-            "--until",
+            "--wait-for",
             "05",
             "--reason",
             "Needs remediation.",
@@ -676,243 +640,175 @@ The paragraph criterion passes.
             "in-progress",
         )
 
-    def test_confirm_pass_marks_done_with_verified_completion(self) -> None:
-        criteria = ("The focused check passes.", "The behavior is observable.")
-        self.fixture.add_ticket("01", criteria=criteria)
+    def test_done_marks_active_ticket_complete(self) -> None:
+        self.fixture.add_ticket("01")
         self.fixture.add_ticket("02", blocked_by="`01` - First")
         self.run_cli("next", "--ticket", "01")
 
-        packet, _ = self.run_cli("prepare-confirm", "--ticket", "01")
-        self.assertEqual(packet["outcome"], "CONFIRMATION_REQUEST")
-        self.assertEqual(packet["ticket"], "01")
-        self.assertFalse(packet["changed"])
-        self.assertEqual(packet["data"]["acceptance_criteria"], list(criteria))
-        self.assertEqual(packet["data"]["objective"], "Deliver ticket 01.")
-        confirmed = self.submit_result("01", criteria)
+        completed, _ = self.run_cli(
+            "done", "--ticket", "01", "--note", "Implementation completed."
+        )
 
-        self.assertEqual(confirmed["outcome"], "PASS")
-        self.assertTrue(confirmed["changed"])
-        self.assertEqual(confirmed["data"]["frontier"], ["02"])
+        self.assertEqual(completed["outcome"], "DONE")
+        self.assertTrue(completed["changed"])
+        self.assertEqual(completed["data"]["frontier"], ["02"])
         self.assertEqual(
-            confirmed["next"],
+            completed["data"]["completion"],
+            {"method": "explicit-done", "note": "Implementation completed."},
+        )
+        self.assertEqual(
+            completed["next"],
             {
-                "command": "run-ticket-plan next 02",
+                "command": "tickets next 02",
                 "reason": "oldest executable ticket",
             },
         )
-        completed = ticketctl.load_tracker(self.fixture.feature).tickets["01"]
-        self.assertEqual(completed.state["completion"]["method"], "verified")
+        ticket = ticketctl.load_tracker(self.fixture.feature).tickets["01"]
+        self.assertEqual(ticket.state["completion"]["method"], "explicit-done")
 
-    def test_confirm_retries_stay_idempotent(self) -> None:
-        criteria = ("The focused check passes.",)
-        ticket = self.fixture.add_ticket("01", criteria=criteria)
+    def test_done_retries_stay_idempotent(self) -> None:
+        ticket = self.fixture.add_ticket("01")
         self.fixture.add_ticket("02", blocked_by="01 - First")
         self.run_cli("next")
-        result_path = self.result_file("01", criteria)
+        arguments = ("--ticket", "01", "--note", "Implementation completed.")
 
-        first, _ = self.run_cli(
-            "confirm", "--ticket", "01", "--result-file", str(result_path)
-        )
-        repeated, _ = self.run_cli(
-            "confirm", "--ticket", "01", "--result-file", str(result_path)
-        )
+        first, _ = self.run_cli("done", *arguments)
+        repeated, _ = self.run_cli("done", *arguments)
 
         self.assertTrue(first["changed"])
         self.assertFalse(repeated["changed"])
-        self.assertEqual(repeated["outcome"], "PASS")
+        self.assertEqual(repeated["outcome"], "DONE")
         self.assertEqual(
             ticket.read_text(encoding="utf-8").count(ticketctl.STATE_START), 1
         )
         self.run_cli("next", "--ticket", "02")
-        delayed, _ = self.run_cli(
-            "confirm", "--ticket", "01", "--result-file", str(result_path)
-        )
-        self.assertEqual((delayed["ticket"], delayed["outcome"]), ("01", "PASS"))
+        delayed, _ = self.run_cli("done", *arguments)
+        self.assertEqual((delayed["ticket"], delayed["outcome"]), ("01", "DONE"))
         self.assertFalse(delayed["changed"])
 
-    def test_confirm_preserves_blocked_and_failed_criterion_evidence(self) -> None:
-        criteria = ("The local check passes.", "The external approval exists.")
-        self.fixture.add_ticket("01", criteria=criteria)
-        self.run_cli("next")
-        result = {
-            "version": 1,
-            "ticket": "01",
-            "summary": "Local behavior failed and approval is unavailable.",
-            "criteria": [
-                {
-                    "criterion": criteria[0],
-                    "result": "FAIL",
-                    "evidence": "Focused test exited 1.",
-                },
-                {
-                    "criterion": criteria[1],
-                    "result": "BLOCKED",
-                    "evidence": "Independent approval has not been issued.",
-                },
-            ],
-        }
-        path = self.root / "blocked-confirmation.json"
-        path.write_text(json.dumps(result), encoding="utf-8")
-
-        confirmed, _ = self.run_cli(
-            "confirm", "--ticket", "01", "--result-file", str(path)
-        )
-
-        self.assertEqual(confirmed["outcome"], "BLOCKED")
-        self.assertEqual(confirmed["ticket"], "01")
-        self.assertTrue(confirmed["changed"])
-        self.assertEqual(confirmed["data"]["summary"], result["summary"])
-        self.assertEqual(confirmed["data"]["criteria"], result["criteria"])
-        self.assertEqual(
-            confirmed["next"],
-            {
-                "command": "run-ticket-plan confirm 01",
-                "reason": "retry after resolving non-passing criteria",
-            },
-        )
-        repeated, _ = self.run_cli("next")
-        last_confirmation = repeated["data"]["work_packet"]["history"][
-            "last_confirmation"
-        ]
-        self.assertEqual(
-            set(last_confirmation),
-            {"result", "result_digest", "summary", "criteria"},
-        )
-        self.assertEqual(
-            last_confirmation["criteria"],
-            result["criteria"],
-        )
-
-    def test_manual_pass_records_a_distinct_completion_method(self) -> None:
+    def test_done_rejects_different_completion_evidence(self) -> None:
         self.fixture.add_ticket("01")
         self.run_cli("next")
+        self.run_cli("done", "--ticket", "01", "--note", "First decision.")
 
-        completed, _ = self.run_cli(
-            "pass", "--ticket", "01", "--note", "Verified on a physical device."
+        rejected, _ = self.run_cli(
+            "done",
+            "--ticket",
+            "01",
+            "--note",
+            "Different decision.",
+            expected=2,
         )
 
-        self.assertEqual(completed["outcome"], "PASS")
-        self.assertEqual(completed["data"]["completion"]["method"], "manual-pass")
+        self.assertEqual(rejected["error"]["code"], "INVALID_TRANSITION")
+        completion = ticketctl.load_tracker(self.fixture.feature).tickets["01"].state[
+            "completion"
+        ]
         self.assertEqual(
-            completed["data"]["completion"]["note"],
-            "Verified on a physical device.",
+            completion,
+            {"method": "explicit-done", "note": "First decision."},
         )
 
-    def test_manual_pass_rejects_a_blank_note_before_writing(self) -> None:
+    def test_done_rejects_ready_and_paused_tickets_with_specific_errors(self) -> None:
+        self.fixture.add_ticket("01")
+
+        ready, _ = self.run_cli("done", "--ticket", "01", expected=2)
+        self.assertEqual(ready["error"]["code"], "TICKET_NOT_ACTIVE")
+        self.assertEqual(ready["error"]["details"]["status"], "ready-for-agent")
+
+        self.run_cli("next")
+        self.run_cli(
+            "pause", "--ticket", "01", "--reason", "Waiting for Core contract."
+        )
+
+        paused, _ = self.run_cli("done", "--ticket", "01", expected=2)
+        self.assertEqual(paused["error"]["code"], "TICKET_PAUSED")
+        self.assertEqual(paused["error"]["details"]["status"], "paused")
+        self.assertEqual(
+            paused["error"]["details"]["pause_reason"],
+            "Waiting for Core contract.",
+        )
+
+    def test_done_uses_a_default_note(self) -> None:
         ticket = self.fixture.add_ticket("01")
         self.run_cli("next")
 
-        rejected, _ = self.run_cli("pass", "--note", "   ", expected=2)
+        completed, _ = self.run_cli("done", "--ticket", "01")
+
+        self.assertEqual(
+            completed["data"]["completion"],
+            {"method": "explicit-done", "note": "Explicit user completion."},
+        )
+        self.assertIn("**Status:** Done", ticket.read_text(encoding="utf-8"))
+
+    def test_done_rejects_a_blank_note_before_writing(self) -> None:
+        ticket = self.fixture.add_ticket("01")
+        self.run_cli("next")
+
+        rejected, _ = self.run_cli("done", "--note", "   ", expected=2)
 
         self.assertEqual(rejected["error"]["code"], "NOTE_INVALID")
         self.assertFalse(rejected["changed"])
         self.assertIn("**Status:** in-progress", ticket.read_text(encoding="utf-8"))
 
-    def test_manual_pass_retries_stay_idempotent(self) -> None:
-        ticket = self.fixture.add_ticket("01")
+    def test_concurrent_done_allows_one_state_change(self) -> None:
+        self.fixture.add_ticket("01")
         self.run_cli("next")
-        arguments = ("--ticket", "01", "--note", "Verified by the requester.")
+        command = [
+            sys.executable,
+            str(SCRIPT),
+            "done",
+            "--feature-root",
+            str(self.fixture.feature),
+            "--ticket",
+            "01",
+        ]
+        processes = [
+            subprocess.Popen(command, stdout=subprocess.PIPE, text=True)
+            for _ in range(2)
+        ]
+        payloads = [json.loads(process.communicate()[0]) for process in processes]
 
-        first, _ = self.run_cli("pass", *arguments)
-        repeated, _ = self.run_cli("pass", *arguments)
+        self.assertEqual([process.returncode for process in processes], [0, 0])
+        self.assertEqual({payload["outcome"] for payload in payloads}, {"DONE"})
+        self.assertEqual(sorted(payload["changed"] for payload in payloads), [False, True])
 
-        self.assertEqual(first["outcome"], "PASS")
-        self.assertTrue(first["changed"])
-        self.assertEqual(
-            first["data"]["completion"],
-            {"method": "manual-pass", "note": "Verified by the requester."},
+    def test_legacy_completion_and_confirmation_state_remains_readable(self) -> None:
+        verified = self.fixture.add_ticket("01", status="Done")
+        manual = self.fixture.add_ticket("02", status="Done")
+        verified_state = ticketctl._default_state()
+        verified_state["last_confirmation"] = {
+            "result": "PASS",
+            "result_digest": "sha256:" + "0" * 64,
+            "summary": "Legacy verification passed.",
+            "criteria": [
+                {
+                    "criterion": "The focused check passes.",
+                    "result": "PASS",
+                    "evidence": "Legacy focused check exited 0.",
+                }
+            ],
+        }
+        verified_state["completion"] = {"method": "verified"}
+        verified.write_text(
+            ticketctl._replace_state(verified.read_text(), verified_state),
+            encoding="utf-8",
         )
-        self.assertIsNone(first["next"])
-        self.assertFalse(repeated["changed"])
-        self.assertEqual(repeated["data"]["completion"], first["data"]["completion"])
-        self.assertEqual(
-            ticket.read_text(encoding="utf-8").count(ticketctl.STATE_START), 1
+        manual_state = ticketctl._default_state()
+        manual_state["completion"] = {
+            "method": "manual-pass",
+            "note": "Legacy manual acceptance.",
+        }
+        manual.write_text(
+            ticketctl._replace_state(manual.read_text(), manual_state),
+            encoding="utf-8",
         )
-        self.fixture.add_ticket("02", blocked_by="01 - First")
-        self.run_cli("next", "--ticket", "02")
-        delayed, _ = self.run_cli("pass", *arguments)
-        self.assertEqual((delayed["ticket"], delayed["outcome"]), ("01", "PASS"))
-        self.assertFalse(delayed["changed"])
 
-    def test_confirmation_rejects_invalid_structures(self) -> None:
-        criteria = ("Criterion one.", "Criterion two.")
-        self.fixture.add_ticket("01", criteria=criteria)
-        self.run_cli("next")
-        path = self.result_file("01", criteria)
-        base = json.loads(path.read_text(encoding="utf-8"))
-
-        def unknown_field(result: dict[str, object]) -> None:
-            result["metadata"] = {"unbounded": "payload"}
-
-        def oversized_evidence(result: dict[str, object]) -> None:
-            result["criteria"][0]["evidence"] = "x" * 4_001
-
-        def missing_criterion(result: dict[str, object]) -> None:
-            result["criteria"] = result["criteria"][:1]
-
-        def inconsistent_subchecks(result: dict[str, object]) -> None:
-            result["criteria"][0]["subchecks"] = [
-                {"check": "First.", "result": "PASS", "evidence": "Passed."},
-                {"check": "Second.", "result": "FAIL", "evidence": "Failed."},
-            ]
-
-        for name, mutate in {
-            "unknown field": unknown_field,
-            "oversized evidence": oversized_evidence,
-            "missing criterion": missing_criterion,
-            "inconsistent subchecks": inconsistent_subchecks,
-        }.items():
-            with self.subTest(name=name):
-                result = json.loads(json.dumps(base))
-                mutate(result)
-                path.write_text(json.dumps(result), encoding="utf-8")
-                rejected, _ = self.run_cli(
-                    "confirm", "--result-file", str(path), expected=2
-                )
-                self.assertEqual(rejected["error"]["code"], "RESULT_INVALID")
+        status, _ = self.run_cli("status")
 
         self.assertEqual(
-            ticketctl.load_tracker(self.fixture.feature).tickets["01"].status,
-            "in-progress",
-        )
-
-    def test_confirmation_rejects_an_oversized_result_file(self) -> None:
-        criterion = "The focused check passes."
-        self.fixture.add_ticket("01", criteria=(criterion,))
-        self.run_cli("next")
-        path = self.root / "oversized-confirmation.json"
-        path.write_text(
-            " " * (ticketctl.CONFIRMATION_RESULT_MAX_BYTES + 1), encoding="utf-8"
-        )
-
-        rejected, _ = self.run_cli("confirm", "--result-file", str(path), expected=2)
-
-        self.assertEqual(rejected["error"]["code"], "RESULT_INVALID")
-
-    def test_confirmation_digest_uses_the_canonical_projection(self) -> None:
-        criterion = "The focused check passes."
-        self.fixture.add_ticket("01", criteria=(criterion,))
-        self.run_cli("next")
-        path = self.result_file("01", (criterion,))
-        result = json.loads(path.read_text(encoding="utf-8"))
-        result["summary"] = f"  {result['summary']}  "
-        result["criteria"][0]["evidence"] = "  Focused check exited 0.  "
-        path.write_text(json.dumps(result), encoding="utf-8")
-        first, _ = self.run_cli("confirm", "--ticket", "01", "--result-file", str(path))
-
-        result["summary"] = result["summary"].strip()
-        result["criteria"][0]["evidence"] = result["criteria"][0]["evidence"].strip()
-        path.write_text(json.dumps(result), encoding="utf-8")
-        repeated, _ = self.run_cli(
-            "confirm", "--ticket", "01", "--result-file", str(path)
-        )
-
-        self.assertTrue(first["changed"])
-        self.assertFalse(repeated["changed"])
-        self.assertEqual(repeated["data"]["summary"], result["summary"])
-        self.assertEqual(
-            repeated["data"]["criteria"][0]["evidence"],
-            result["criteria"][0]["evidence"],
+            status["data"]["completion_methods"],
+            {"01": "verified", "02": "manual-pass"},
         )
 
     def test_managed_state_rejects_unknown_fields(self) -> None:
@@ -949,33 +845,28 @@ The paragraph criterion passes.
         self.fixture.add_ticket("05", criteria=criteria["05"], suffix="remediation")
 
         self.run_cli("next", "--ticket", "01")
-        failed = self.submit_result("01", criteria["01"], failing=set(criteria["01"]))
-        self.assertEqual(failed["outcome"], "FAIL")
-
         handoff = self.handoff_file("01")
         self.run_cli(
             "pause",
             "--ticket",
             "01",
             "--reason",
-            "Parent verification failed.",
-            "--until",
+            "Parent implementation is blocked.",
+            "--wait-for",
             "05",
             "--handoff-file",
             str(handoff),
         )
         remediation, _ = self.run_cli("next")
         self.assertEqual(remediation["ticket"], "05")
-        self.submit_result("05", criteria["05"])
+        self.run_cli("done", "--ticket", "05")
 
         resumed, _ = self.run_cli("next")
         self.assertEqual(resumed["ticket"], "01")
         resumed_packet = resumed["data"]["work_packet"]
         self.assertEqual(resumed_packet["history"]["handoff"], str(handoff.resolve()))
-        self.assertEqual(
-            resumed_packet["history"]["last_confirmation"]["result"], "FAIL"
-        )
-        self.submit_result("01", criteria["01"])
+        self.assertIsNone(resumed_packet["history"]["last_confirmation"])
+        self.run_cli("done", "--ticket", "01")
 
         dependent, _ = self.run_cli("next")
         recovered_after_interruption, _ = self.run_cli("next")
@@ -983,7 +874,7 @@ The paragraph criterion passes.
             recovered_after_interruption["data"]["work_packet"],
             dependent["data"]["work_packet"],
         )
-        self.submit_result("02", criteria["02"])
+        self.run_cli("done", "--ticket", "02")
         complete, _ = self.run_cli("status")
         self.assertEqual(complete["outcome"], "COMPLETE")
         self.assertEqual(complete["data"]["by_state"], {"done": ["01", "02", "05"]})
@@ -1001,7 +892,7 @@ The paragraph criterion passes.
         self.fixture.add_ticket("01", status="in-progress")
         self.fixture.add_ticket("02", status="in-progress")
 
-        for command in ("next", "pause", "pass", "prepare-confirm"):
+        for command in ("next", "pause", "done"):
             with self.subTest(command=command):
                 arguments = ["--ticket", "01"]
                 if command == "pause":
@@ -1024,6 +915,12 @@ The paragraph criterion passes.
         self.assertEqual(payload["command"], "unknown-mode")
         self.assertEqual(payload["outcome"], "ERROR")
         self.assertEqual(payload["error"]["code"], "USAGE_ERROR")
+
+    def test_removed_completion_commands_are_rejected(self) -> None:
+        for command in ("confirm", "prepare-confirm", "pass"):
+            with self.subTest(command=command):
+                payload, _ = self.run_cli(command, expected=2)
+                self.assertEqual(payload["error"]["code"], "USAGE_ERROR")
 
     def test_missing_git_returns_a_structured_environment_error(self) -> None:
         self.fixture.add_ticket("01")

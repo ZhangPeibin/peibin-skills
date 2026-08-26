@@ -14,7 +14,7 @@
 | [to-feature-doc](./skills/personal/to-feature-doc/) | 基于真实代码为现有功能模块生成新人 onboarding 文档 | 需要为某个功能/模块写设计说明文档 |
 | [requirements-analysis](./skills/personal/requirements-analysis/) | 通过逐项追问澄清 Feature，并持续维护 pre-PRD 讨论文档 | 需求尚未清晰、需要保留讨论和决策上下文 |
 | [setup-engineering-workflow](./skills/personal/setup-engineering-workflow/) | 为工程 Skill 配置 issue tracker、标签、领域文档和 pre-PRD Feature 文档 | 首次在仓库中使用开发工作流 |
-| [run-ticket-plan](./skills/personal/run-ticket-plan/) | 直接消费 `to-tickets` 的本地 ticket DAG，以轻量状态推进任务而不实现产品代码 | 查看 frontier、领取或暂停 ticket、自动验证或手动确认完成 |
+| [tickets](./skills/personal/tickets/) | 管理 `to-tickets` 生成的本地 ticket DAG 状态，不实现或验证产品代码 | 查看队列、领取、显式完成或暂停 ticket |
 | [handoff](./skills/personal/handoff/) | 把当前会话压缩成可恢复、可验证的版本化 Markdown 交接物 | 用户显式调用 `$handoff`，或编排器显式请求 artifact-only 交接 |
 | [init-flutter-app](./skills/personal/flutter/init-flutter-app/) | 从 flutter-template（GitHub 或本地）脚手架新 Flutter 应用 | 要用模板初始化 Flutter 项目 |
 | [add-flutter-feature](./skills/personal/flutter/add-flutter-feature/) | 在 flutter-template 派生项目里按规范新增一个 feature（生成器 + playbook + make check） | 要给这类 Flutter 项目加功能 |
@@ -88,7 +88,7 @@ ln -s /path/to/peibin-skills/skills/personal/to-mermaid ~/.cursor/skills/to-merm
 ln -s /path/to/peibin-skills/skills/personal/to-feature-doc ~/.cursor/skills/to-feature-doc
 ln -s /path/to/peibin-skills/skills/personal/requirements-analysis ~/.cursor/skills/requirements-analysis
 ln -s /path/to/peibin-skills/skills/personal/setup-engineering-workflow ~/.cursor/skills/setup-engineering-workflow
-ln -s /path/to/peibin-skills/skills/personal/run-ticket-plan ~/.cursor/skills/run-ticket-plan
+ln -s /path/to/peibin-skills/skills/personal/tickets ~/.cursor/skills/tickets
 ln -s /path/to/peibin-skills/skills/personal/handoff ~/.cursor/skills/handoff
 ln -s /path/to/peibin-skills/skills/personal/flutter/init-flutter-app ~/.cursor/skills/init-flutter-app
 ln -s /path/to/peibin-skills/skills/personal/flutter/add-flutter-feature ~/.cursor/skills/add-flutter-feature
@@ -126,7 +126,7 @@ peibin-skills/
 │   │   ├── to-feature-doc/
 │   │   ├── requirements-analysis/
 │   │   ├── setup-engineering-workflow/
-│   │   ├── run-ticket-plan/
+│   │   ├── tickets/
 │   │   ├── handoff/
 │   │   └── flutter/
 │   │       ├── init-flutter-app/

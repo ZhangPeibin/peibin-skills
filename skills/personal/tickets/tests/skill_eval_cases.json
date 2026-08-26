@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "skill": "tickets",
+  "cases": [
+    {
+      "id": "omitted-mode-is-read-only-status",
+      "input": "Use $tickets for /repo/.scratch/demo and report whether it is complete or deadlocked.",
+      "expected": {
+        "outcome": "ACTIVE | READY | COMPLETE | DEADLOCK",
+        "tool_calls": [{"command": "status", "count": 1}]
+      },
+      "forbidden": {
+        "tool_calls": [{"command": "next"}],
+        "behaviors": ["mutate a ticket, or treat an incomplete deadlock as complete"]
+      }
+    },
+    {
+      "id": "next-returns-work-packet-and-stops",
+      "input": "Use $tickets next for the current feature.",
+      "expected": {
+        "outcome": "WORK_PACKET",
+        "tool_calls": [{"command": "next", "count": 1}]
+      },
+      "forbidden": {
+        "tool_calls": [],
+        "behaviors": ["implement product work or invoke an implementation skill"]
+      }
+    },
+    {
+      "id": "done-is-an-explicit-state-transition",
+      "input": "Use $tickets done 04 --note 'Implementation completed'.",
+      "expected": {
+        "outcome": "DONE",
+        "tool_calls": [{"command": "done", "count": 1}]
+      },
+      "forbidden": {
+        "tool_calls": [],
+        "behaviors": ["run tests, inspect product code, invoke implement, or claim independent verification"]
+      }
+    },
+    {
+      "id": "pause-records-an-existing-remediation-edge",
+      "input": "Ticket 05 and schema-2.0 handoff /repo/.scratch/demo/handoffs/01.md already exist. Use $tickets pause 01 --wait-for 05 --reason 'Implementation is blocked' --handoff-file /repo/.scratch/demo/handoffs/01.md.",
+      "expected": {
+        "outcome": "PAUSED",
+        "tool_calls": [{"command": "pause", "count": 1}]
+      },
+      "forbidden": {
+        "tool_calls": [],
+        "behaviors": ["create ticket 05, generate another handoff, reverse the dependency, or implement work"]
+      }
+    }
+  ]
+}
