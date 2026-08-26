@@ -18,6 +18,7 @@
         "./skills/vendor/mattpocock/engineering/to-spec",
         "./skills/vendor/mattpocock/engineering/to-tickets",
         "./skills/vendor/mattpocock/engineering/implement",
-        "./skills/vendor/mattpocock/engineering/tdd"
+        "./skills/vendor/mattpocock/engineering/tdd",
+        "./skills/vendor/mattpocock/engineering/code-review"
     ]
 }
