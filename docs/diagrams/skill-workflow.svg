@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="864" viewBox="12 4 2796 1509" role="img" aria-labelledby="title desc">
-  <title id="title">Vendor Skill Workflow</title>
-  <desc id="desc">Matt Pocock vendor skills from idea through implementation, with on-ramps and supporting skills.</desc>
+  <title id="title">AI Engineering Skill Workflow</title>
+  <desc id="desc">Personal and vendored skills from requirements through ticket state, implementation, review, and pull request delivery.</desc>
   <rect x="12" y="4" width="2796" height="1509" fill="#ffffff"/>
   <defs><marker id="arrow-1e1e1e" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#1e1e1e"/></marker><marker id="arrow-6741d9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#6741d9"/></marker><marker id="arrow-2b8a3e" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2b8a3e"/></marker><marker id="arrow-e67700" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#e67700"/></marker></defs>
-  <text x="60" y="72" text-anchor="start" font-family="Virgil, 'Comic Sans MS', cursive" font-size="40" font-weight="600" fill="#1e1e1e" opacity="1"><tspan x="60" dy="0">Vendor Skill Workflow</tspan></text>
-  <text x="62" y="108" text-anchor="start" font-family="Virgil, 'Comic Sans MS', cursive" font-size="20" font-weight="400" fill="#868e96" opacity="1"><tspan x="62" dy="0">22 vendored skills | [U] user-invoked | [A] model-reachable | [ON] enabled here</tspan></text>
+  <text x="60" y="72" text-anchor="start" font-family="Virgil, 'Comic Sans MS', cursive" font-size="40" font-weight="600" fill="#1e1e1e" opacity="1"><tspan x="60" dy="0">AI Engineering Skill Workflow</tspan></text>
+  <text x="62" y="108" text-anchor="start" font-family="Virgil, 'Comic Sans MS', cursive" font-size="20" font-weight="400" fill="#868e96" opacity="1"><tspan x="62" dy="0">21 vendored + 10 personal skills | [U] user-invoked | [A] model-reachable | [ON] enabled here</tspan></text>
   <rect x="40" y="135" width="2740" height="520" rx="16" fill="#d0ebff" stroke="#1971c2" stroke-width="2" stroke-dasharray="12 10" opacity="0.35"/>
   <text x="64" y="181" text-anchor="start" font-family="Virgil, 'Comic Sans MS', cursive" font-size="28" font-weight="600" fill="#1971c2" opacity="1"><tspan x="64" dy="0">ENGINEERING: IDEA TO SHIP</tspan></text>
   <rect x="40" y="700" width="2740" height="340" rx="16" fill="#d3f9d8" stroke="#2b8a3e" stroke-width="2" stroke-dasharray="12 10" opacity="0.35"/>
@@ -23,6 +23,9 @@
   <text x="1355" y="475.75" text-anchor="middle" font-family="Virgil, 'Comic Sans MS', cursive" font-size="18" font-weight="400" fill="#1e1e1e" opacity="1"><tspan x="1355" dy="0">[U] to-spec</tspan></text>
   <rect x="1530" y="430" width="230" height="78" rx="16" fill="#d0ebff" stroke="#1971c2" stroke-width="2" opacity="1"/>
   <text x="1645" y="475.75" text-anchor="middle" font-family="Virgil, 'Comic Sans MS', cursive" font-size="18" font-weight="400" fill="#1e1e1e" opacity="1"><tspan x="1645" dy="0">[U] to-tickets</tspan></text>
+  <rect x="1830" y="430" width="260" height="78" rx="16" fill="#d3f9d8" stroke="#2b8a3e" stroke-width="2" opacity="1"/>
+  <text x="1960" y="462" text-anchor="middle" font-family="Virgil, 'Comic Sans MS', cursive" font-size="18" font-weight="400" fill="#1e1e1e" opacity="1"><tspan x="1960" dy="0">[U][ON] tickets</tspan></text>
+  <text x="1960" y="486" text-anchor="middle" font-family="Virgil, 'Comic Sans MS', cursive" font-size="14" font-weight="400" fill="#2b8a3e" opacity="1"><tspan x="1960" dy="0">next / done</tspan></text>
   <rect x="1840" y="270" width="240" height="78" rx="16" fill="#d0ebff" stroke="#1971c2" stroke-width="2" opacity="1"/>
   <text x="1960" y="315.75" text-anchor="middle" font-family="Virgil, 'Comic Sans MS', cursive" font-size="18" font-weight="400" fill="#1e1e1e" opacity="1"><tspan x="1960" dy="0">[U] implement</tspan></text>
   <rect x="2150" y="270" width="220" height="78" rx="16" fill="#d0ebff" stroke="#1971c2" stroke-width="2" stroke-dasharray="12 10" opacity="1"/>
@@ -43,7 +46,8 @@
   <polyline points="1180,310 1240,469" fill="none" stroke="#1e1e1e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow-1e1e1e)" opacity="1"/>
   <text x="1185" y="391" text-anchor="middle" font-family="Virgil, 'Comic Sans MS', cursive" font-size="16" font-weight="400" fill="#868e96" opacity="1"><tspan x="1185" dy="0">multi-session</tspan></text>
   <polyline points="1470,469 1530,469" fill="none" stroke="#1e1e1e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow-1e1e1e)" opacity="1"/>
-  <polyline points="1760,469 1840,309" fill="none" stroke="#1e1e1e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow-1e1e1e)" opacity="1"/>
+  <polyline points="1760,469 1830,469" fill="none" stroke="#1e1e1e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow-1e1e1e)" opacity="1"/>
+  <polyline points="2050,430 2050,348" fill="none" stroke="#1e1e1e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow-1e1e1e)" opacity="1"/>
   <polyline points="2080,309 2150,309" fill="none" stroke="#1e1e1e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow-1e1e1e)" opacity="1"/>
   <polyline points="2370,309 2450,309" fill="none" stroke="#1e1e1e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow-1e1e1e)" opacity="1"/>
   <polyline points="815,348 800,525" fill="none" stroke="#6741d9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow-6741d9)" opacity="1"/>

@@ -32,11 +32,11 @@
       "locked": false,
       "fontSize": 40,
       "fontFamily": 5,
-      "text": "Vendor Skill Workflow",
+      "text": "AI Engineering Skill Workflow",
       "textAlign": "left",
       "verticalAlign": "top",
       "containerId": null,
-      "originalText": "Vendor Skill Workflow",
+      "originalText": "AI Engineering Skill Workflow",
       "autoResize": true,
       "lineHeight": 1.25
     },
@@ -69,11 +69,11 @@
       "locked": false,
       "fontSize": 20,
       "fontFamily": 5,
-      "text": "22 vendored skills | [U] user-invoked | [A] model-reachable | [ON] enabled here",
+      "text": "21 vendored + 10 personal skills | [U] user-invoked | [A] model-reachable | [ON] enabled here",
       "textAlign": "left",
       "verticalAlign": "top",
       "containerId": null,
-      "originalText": "22 vendored skills | [U] user-invoked | [A] model-reachable | [ON] enabled here",
+      "originalText": "21 vendored + 10 personal skills | [U] user-invoked | [A] model-reachable | [ON] enabled here",
       "autoResize": true,
       "lineHeight": 1.25
     },
@@ -740,7 +740,7 @@
         },
         {
           "type": "arrow",
-          "id": "a-tickets-implement"
+          "id": "a-to-tickets-state"
         }
       ],
       "updated": 1785686400000,
@@ -781,6 +781,86 @@
       "verticalAlign": "middle",
       "containerId": "to-tickets",
       "originalText": "[U] to-tickets",
+      "autoResize": true,
+      "lineHeight": 1.25
+    },
+    {
+      "id": "tickets",
+      "type": "rectangle",
+      "x": 1830,
+      "y": 430,
+      "width": 260,
+      "height": 78,
+      "angle": 0,
+      "strokeColor": "#2b8a3e",
+      "backgroundColor": "#d3f9d8",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "strokeStyle": "solid",
+      "roughness": 1,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "index": "a000lz",
+      "roundness": {
+        "type": 3
+      },
+      "seed": 1618381933,
+      "version": 1,
+      "versionNonce": 169293751,
+      "isDeleted": false,
+      "boundElements": [
+        {
+          "type": "text",
+          "id": "tickets-text"
+        },
+        {
+          "type": "arrow",
+          "id": "a-to-tickets-state"
+        },
+        {
+          "type": "arrow",
+          "id": "a-tickets-implement"
+        }
+      ],
+      "updated": 1785686400000,
+      "link": null,
+      "locked": false
+    },
+    {
+      "id": "tickets-text",
+      "type": "text",
+      "x": 1842,
+      "y": 446.5,
+      "width": 236,
+      "height": 45,
+      "angle": 0,
+      "strokeColor": "#1e1e1e",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 1,
+      "strokeStyle": "solid",
+      "roughness": 0,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "index": "a000lzz",
+      "roundness": null,
+      "seed": 816821400,
+      "version": 1,
+      "versionNonce": 362357329,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1785686400000,
+      "link": null,
+      "locked": false,
+      "fontSize": 18,
+      "fontFamily": 5,
+      "text": "[U][ON] tickets\nnext / done",
+      "textAlign": "center",
+      "verticalAlign": "middle",
+      "containerId": "tickets",
+      "originalText": "[U][ON] tickets\nnext / done",
       "autoResize": true,
       "lineHeight": 1.25
     },
@@ -1723,12 +1803,74 @@
       "elbowed": false
     },
     {
-      "id": "a-tickets-implement",
+      "id": "a-to-tickets-state",
       "type": "arrow",
       "x": 1760,
       "y": 469,
-      "width": 80,
-      "height": -160,
+      "width": 70,
+      "height": 0,
+      "angle": 0,
+      "strokeColor": "#1e1e1e",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "strokeStyle": "solid",
+      "roughness": 1,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "index": "a0015z",
+      "roundness": {
+        "type": 2
+      },
+      "seed": 565825673,
+      "version": 1,
+      "versionNonce": 81107765,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1785686400000,
+      "link": null,
+      "locked": false,
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          70,
+          0
+        ]
+      ],
+      "lastCommittedPoint": null,
+      "startBinding": {
+        "elementId": "to-tickets",
+        "focus": 0,
+        "gap": 6,
+        "fixedPoint": [
+          1,
+          0.5
+        ]
+      },
+      "endBinding": {
+        "elementId": "tickets",
+        "focus": 0,
+        "gap": 6,
+        "fixedPoint": [
+          0,
+          0.5
+        ]
+      },
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "elbowed": false
+    },
+    {
+      "id": "a-tickets-implement",
+      "type": "arrow",
+      "x": 2050,
+      "y": 430,
+      "width": 0,
+      "height": -82,
       "angle": 0,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "transparent",
@@ -1757,18 +1899,18 @@
           0
         ],
         [
-          80,
-          -160
+          0,
+          -82
         ]
       ],
       "lastCommittedPoint": null,
       "startBinding": {
-        "elementId": "to-tickets",
+        "elementId": "tickets",
         "focus": 0,
         "gap": 6,
         "fixedPoint": [
-          1,
-          0.5
+          0.846,
+          0
         ]
       },
       "endBinding": {
@@ -1776,8 +1918,8 @@
         "focus": 0,
         "gap": 6,
         "fixedPoint": [
-          0,
-          0.5
+          0.875,
+          1
         ]
       },
       "startArrowhead": null,

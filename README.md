@@ -35,9 +35,9 @@ $to-spec -> $to-tickets
 
 `$tickets` manages only the local ticket DAG. It does not implement or verify product work; `$implement` owns implementation, tests, review, and implementation commits.
 
-[![Skill workflow](./docs/diagrams/vendor-skill-workflow.png)](./docs/diagrams/vendor-skill-workflow.excalidraw)
+[![Skill workflow](./docs/diagrams/skill-workflow.png)](./docs/diagrams/skill-workflow.excalidraw)
 
-[Edit the Excalidraw source](./docs/diagrams/vendor-skill-workflow.excalidraw) · [View the SVG](./docs/diagrams/vendor-skill-workflow.svg)
+[Edit the Excalidraw source](./docs/diagrams/skill-workflow.excalidraw) · [View the SVG](./docs/diagrams/skill-workflow.svg)
 
 ## Personal Skills
 
@@ -50,7 +50,7 @@ $to-spec -> $to-tickets
 | [requirements-analysis](./skills/personal/requirements-analysis/) | Clarify a feature one decision at a time and preserve the discussion | Requirements are still ambiguous |
 | [setup-engineering-workflow](./skills/personal/setup-engineering-workflow/) | Configure issue tracking, labels, domain docs, and pre-PRD docs | A repository is adopting the workflow |
 | [tickets](./skills/personal/tickets/) | Manage the state of a local `to-tickets` DAG | Tickets need to be inspected, activated, completed, or paused |
-| [handoff](./skills/personal/handoff/) | Turn a session into a durable, versioned Markdown handoff | Work must continue in another session |
+| [handoff](./skills/personal/handoff/) | Use `$handoff` to create a durable, versioned Markdown handoff | Work must continue in another session |
 | [init-flutter-app](./skills/personal/flutter/init-flutter-app/) | Scaffold a Flutter app from `flutter-template` | Starting a Flutter project |
 | [add-flutter-feature](./skills/personal/flutter/add-flutter-feature/) | Add a layered feature to a `flutter-template` project | Extending an existing Flutter app |
 
@@ -64,6 +64,8 @@ The plugin currently enables `writing-great-skills` and the workflow built from 
 
 Both personal and vendor collections contain a skill named `handoff`. The personal version is canonical and is the only one registered in the plugin; the vendor version is retained as reference source.
 
+`$handoff` creates a full handoff by default. Use `$handoff --compact` for frequent continuation; both profiles support artifact-only output through `$handoff --artifact-only` and `$handoff --compact --artifact-only`.
+
 ## Installation
 
 Clone the private repository with configured GitHub SSH credentials:
@@ -71,6 +73,24 @@ Clone the private repository with configured GitHub SSH credentials:
 ```bash
 git clone git@github.com:ZhangPeibin/peibin-skills.git
 cd peibin-skills
+```
+
+### Codex
+
+Copy or symlink the personal skills you need into the shared agent skills directory:
+
+```bash
+mkdir -p ~/.agents/skills
+ln -s /path/to/peibin-skills/skills/personal/to-commits ~/.agents/skills/to-commits
+ln -s /path/to/peibin-skills/skills/personal/to-pr ~/.agents/skills/to-pr
+ln -s /path/to/peibin-skills/skills/personal/to-mermaid ~/.agents/skills/to-mermaid
+ln -s /path/to/peibin-skills/skills/personal/to-feature-doc ~/.agents/skills/to-feature-doc
+ln -s /path/to/peibin-skills/skills/personal/requirements-analysis ~/.agents/skills/requirements-analysis
+ln -s /path/to/peibin-skills/skills/personal/setup-engineering-workflow ~/.agents/skills/setup-engineering-workflow
+ln -s /path/to/peibin-skills/skills/personal/tickets ~/.agents/skills/tickets
+ln -s /path/to/peibin-skills/skills/personal/handoff ~/.agents/skills/handoff
+ln -s /path/to/peibin-skills/skills/personal/flutter/init-flutter-app ~/.agents/skills/init-flutter-app
+ln -s /path/to/peibin-skills/skills/personal/flutter/add-flutter-feature ~/.agents/skills/add-flutter-feature
 ```
 
 ### Claude Code Plugin
@@ -112,18 +132,32 @@ npx skills add /path/to/peibin-skills --full-depth --skill setup-engineering-wor
 
 The installer may create or update `skills-lock.json` in the consuming project; this source repository does not maintain that lock file.
 
+## Development
+
+Install the validation dependency once, then run the same checks used by CI:
+
+```bash
+make install-dev
+make check
+```
+
+`make check` validates plugin registration, Skill metadata, local documentation links, workflow assets, and every personal Skill test suite.
+
 ## Repository Layout
 
 ```text
 peibin-skills/
 ├── .claude-plugin/
 │   └── plugin.json
+├── .github/workflows/ci.yml
 ├── docs/diagrams/
+├── scripts/validate_repo.py
 ├── skills/
 │   ├── personal/
 │   └── vendor/mattpocock/
 ├── README.md
-└── README.zh-CN.md
+├── README.zh-CN.md
+└── Makefile
 ```
 
 ## Adding a Skill

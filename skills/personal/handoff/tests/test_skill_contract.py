@@ -18,6 +18,7 @@ VALIDATOR_PATH = SKILL_ROOT / "scripts" / "validate_handoff.py"
 FORWARD_CASES_PATH = SKILL_ROOT / "tests" / "forward_cases.json"
 INSTALL_EVAL_PATH = SKILL_ROOT / "tests" / "install-eval.json"
 README_PATH = REPO_ROOT / "README.md"
+README_ZH_PATH = REPO_ROOT / "README.zh-CN.md"
 DESIGN_PATH = REPO_ROOT / "docs" / "handoff-skill-design.md"
 MANIFEST_PATH = REPO_ROOT / ".claude-plugin" / "plugin.json"
 RUNTIME_SKILL_FILES = (
@@ -172,9 +173,10 @@ class SkillContractTest(unittest.TestCase):
     def test_ui_and_readme_expose_both_content_profiles(self) -> None:
         self.assertIn("$handoff", self.openai)
         self.assertIn("$handoff --compact", self.openai)
-        readme = README_PATH.read_text(encoding="utf-8")
-        self.assertIn("$handoff --compact", readme)
-        self.assertIn("$handoff --compact --artifact-only", readme)
+        for path in (README_PATH, README_ZH_PATH):
+            readme = path.read_text(encoding="utf-8")
+            self.assertIn("$handoff --compact", readme)
+            self.assertIn("$handoff --compact --artifact-only", readme)
 
     def test_profiles_use_progressive_disclosure(self) -> None:
         self.assertIn("references/full-protocol.md", self.skill)
@@ -379,7 +381,9 @@ class SkillContractTest(unittest.TestCase):
             "--agent codex --copy -y",
             readme,
         )
-        self.assertIn("vendor `handoff` 仅作为参考源码", readme)
+        self.assertIn("vendor version is retained as reference source", readme)
+        readme_zh = README_ZH_PATH.read_text(encoding="utf-8")
+        self.assertIn("vendor `handoff` 仅作为参考源码", readme_zh)
 
     def test_install_evidence_is_sanitized_and_matches_current_sources(self) -> None:
         evidence = json.loads(INSTALL_EVAL_PATH.read_text(encoding="utf-8"))
