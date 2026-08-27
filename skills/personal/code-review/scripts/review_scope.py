@@ -31,6 +31,13 @@ SECRET_NAMES = {
 SECRET_SUFFIXES = {".key", ".p12", ".pfx", ".pem"}
 VENDORED_PARTS = {"node_modules", "third_party", "vendor", "vendors"}
 GENERATED_PARTS = {"build", "coverage", "dist", "generated"}
+RENAME_LIMIT = 1000
+OUTPUT_INDICATOR_OPTIONS = (
+    "--output-indicator-new=+",
+    "--output-indicator-old=-",
+    "--output-indicator-context= ",
+)
+_OUTPUT_INDICATOR_SUPPORT: dict[str, bool] = {}
 
 
 class ScopeError(ValueError):
@@ -48,10 +55,16 @@ def _git_environment() -> dict[str, str]:
     environment["GIT_NO_LAZY_FETCH"] = "1"
     environment["GIT_OPTIONAL_LOCKS"] = "0"
     environment["GIT_TERMINAL_PROMPT"] = "0"
+    environment["LC_ALL"] = "C"
     return environment
 
 
-def _git(repo: Path, *args: str, input_data: bytes | None = None) -> bytes:
+def _git(
+    repo: Path,
+    *args: str,
+    input_data: bytes | None = None,
+    reject_incomplete_renames: bool = False,
+) -> bytes:
     result = subprocess.run(
         ["git", "-C", str(repo), *args],
         input=input_data,
@@ -63,6 +76,10 @@ def _git(repo: Path, *args: str, input_data: bytes | None = None) -> bytes:
     if result.returncode != 0:
         message = result.stderr.decode("utf-8", "replace").strip()
         raise ScopeError(message or f"git {' '.join(args)} failed")
+    if reject_incomplete_renames and b"exhaustive rename detection was skipped" in result.stderr:
+        raise ScopeError(
+            f"rename detection exceeded the canonical limit of {RENAME_LIMIT}; reduce the scope"
+        )
     return result.stdout
 
 
@@ -135,6 +152,32 @@ def _parse_raw(raw: bytes) -> list[dict[str, str | None]]:
     return records
 
 
+def _output_indicator_options(repo: Path) -> list[str]:
+    git_path = os.environ.get("PATH", "")
+    supported = _OUTPUT_INDICATOR_SUPPORT.get(git_path)
+    if supported is None:
+        result = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repo),
+                "diff",
+                "--no-index",
+                *OUTPUT_INDICATOR_OPTIONS,
+                "--",
+                os.devnull,
+                os.devnull,
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=_git_environment(),
+            check=False,
+        )
+        supported = result.returncode in {0, 1}
+        _OUTPUT_INDICATOR_SUPPORT[git_path] = supported
+    return list(OUTPUT_INDICATOR_OPTIONS) if supported else []
+
+
 def _diff_bytes(
     repo: Path,
     args: list[str],
@@ -147,14 +190,16 @@ def _diff_bytes(
         [
             "--patch",
             "--no-color",
+            *_output_indicator_options(repo),
             "--unified=0",
             "--inter-hunk-context=0",
             "--diff-algorithm=myers",
             "--no-indent-heuristic",
             "--find-renames",
+            f"-l{RENAME_LIMIT}",
         ]
         if patch
-        else ["--numstat", "--find-renames"]
+        else ["--numstat", "--find-renames", f"-l{RENAME_LIMIT}"]
     )
     return _git(
         repo,
@@ -519,7 +564,9 @@ def _tracked_records(repo: Path, source: str, diff_args: list[str]) -> list[dict
         "-z",
         "--no-abbrev",
         "--find-renames",
+        f"-l{RENAME_LIMIT}",
         *diff_args,
+        reject_incomplete_renames=True,
     )
     records: list[dict[str, Any]] = []
     for value in _parse_raw(raw):

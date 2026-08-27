@@ -128,8 +128,10 @@ coverage gap.
 Each reviewer returns a Reviewer Result containing inspected record IDs, candidate
 findings and evidence, proposed checks, and unresolved assumptions. A candidate is not
 a final finding. Reject malformed, wrong-snapshot, wrong-unit, wrong-role, or incomplete
-results. A unit becomes covered only after one valid result from each role inspects every
-owned changed record.
+results. After all selected assignments return, use the graph-aware completion operation
+to bind every result to the current graph revision and advance the Coverage Ledger. A unit
+becomes covered only after one valid result from each role inspects every owned changed
+record. Unit-level pair state also gates context-only Integration Review Units.
 
 ## 4. Verify candidates through the evidence gate
 

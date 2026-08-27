@@ -12,6 +12,7 @@ python3 scripts/review_contract.py validate --kind scope_manifest
 python3 scripts/review_contract.py build-one-unit --unit-id <stable-id> --feature-name '<name>'
 python3 scripts/review_contract.py build-graph
 python3 scripts/review_contract.py validate --kind reviewer_result
+python3 scripts/review_contract.py complete-graph
 python3 scripts/review_contract.py complete-one-unit
 ```
 
@@ -38,9 +39,11 @@ agent messages, never in the reviewed repository.
   accepted as current work.
 - **Reviewer Result:** task, scope, unit, role, status, inspected record IDs, candidate
   findings, supporting evidence, proposed checks, and unresolved assumptions.
-- **Coverage Ledger:** every record's primary owner, both role states and attempts, and
-  covered status. A record is covered only when both roles have valid completed results;
-  the ledger is complete only when every record is covered.
+- **Coverage Ledger:** every record's primary owner plus record- and unit-level role states,
+  attempts, and covered status. A record and its owning unit are covered only when both
+  roles have valid completed results. Context-only Integration Review Units remain visible
+  at unit level; the ledger is complete only when every record and executable unit is
+  covered.
 
 ## Semantic graph input
 
@@ -115,6 +118,22 @@ units and the trigger, recalculates ownership and all limits, and emits no envel
 new graph exceeds budget. A late Integration Review Unit never inherits an earlier budget
 approval silently.
 
+## Graph completion
+
+Pass the frozen bundle and every selected Reviewer Result to `complete-graph`. The helper
+accepts only a ready or ready-partial plan whose graph fingerprint is still current. It
+recomputes revision-bound task IDs and verifies every assignment, envelope, owned and
+context record set, result role, completed status, inspected ownership, candidate anchor,
+and pending ledger entry before advancing coverage.
+
+A full plan completes only after both roles finish every executable unit. A paired partial
+review advances the selected units and their owned records while preserving every
+unselected record and unit as uncovered, so `coverage_ledger.complete` remains false.
+Context-only Integration Review Units have no owned record rows, but their unit-level pair
+state still prevents a complete claim until both current-revision results are accepted.
+`complete-one-unit` remains the compatible localized entry point and applies the same
+checks after requiring exactly one Review Unit.
+
 ## Reviewer result
 
 A successful reviewer returns `status: "completed"` and all owned record IDs in
@@ -133,10 +152,11 @@ Return an empty candidate array when nothing survives the reviewer's own scrutin
 uncertain product decisions in `unresolved_assumptions` and safe, focused commands in
 `proposed_checks`; reviewers do not execute those checks independently.
 
-Validate each result before accepting it. `complete-one-unit` additionally confirms that
-task, role, unit, scope ID, and inspected ownership match the frozen plan and that both
-roles completed. Candidate anchors must exactly match an owned typed anchor from the frozen
-Scope Manifest. It returns candidates for main-agent adjudication, not final findings.
+Validate each result before accepting it. `complete-graph` additionally confirms that task,
+role, unit, scope ID, graph revision, and inspected ownership match the frozen plan and that
+both roles completed for every selected unit. Candidate anchors must exactly match an owned
+typed anchor from the frozen Scope Manifest. It returns candidates for main-agent
+adjudication, not final findings.
 
 ## Main-agent adjudication
 

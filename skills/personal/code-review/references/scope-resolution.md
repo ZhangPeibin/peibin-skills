@@ -49,10 +49,13 @@ changed record with an explicit old/new region, allowing distinct functional own
 within one file. Untracked files and non-text changes remain whole typed records.
 
 Hunk identity comes from a canonical patch: color and the indent heuristic are disabled,
-inter-hunk context is zero, the Myers algorithm is fixed, and rename detection is enabled.
-Edited renames are inspected with both old and new literal paths. Parse patch structure by
-LF-delimited bytes, validate each hunk's old/new line counts, and decode only textual fields;
-ambient Git formatting or diff configuration must not alter record boundaries or anchors.
+inter-hunk context is zero, the Myers algorithm is fixed, output indicators are explicit
+when the installed Git supports that interface, and rename detection uses a fixed candidate
+limit. An incomplete exhaustive rename scan fails closed instead of silently changing record
+shape. Edited renames are inspected with both old and new literal paths. Parse patch
+structure by LF-delimited bytes, validate each hunk's old/new line counts, and decode only
+textual fields; ambient Git formatting or diff configuration must not alter record
+boundaries or anchors.
 
 All Git inspection disables external diff programs, text conversion, lazy object fetching,
 terminal credential prompts, and optional index locks. A missing local object is a coverage

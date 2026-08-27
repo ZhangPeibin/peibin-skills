@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import copy
 import json
+import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -39,14 +41,36 @@ def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return result
 
 
-def _resolve_local(repo: Path) -> subprocess.CompletedProcess[str]:
+def _resolve_local(
+    repo: Path, *, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, str(SCOPE_CLI), "local", "--repo", str(repo)],
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
+        env=env,
         check=False,
     )
+
+
+def _reviewer_results(bundle: dict[str, object]) -> list[dict[str, object]]:
+    return [
+        {
+            "schema_version": "2.0",
+            "task_id": envelope["task_id"],
+            "scope_id": envelope["scope_id"],
+            "unit_id": envelope["unit_id"],
+            "role": envelope["role"],
+            "status": "completed",
+            "inspected_record_ids": envelope["changed_record_ids"],
+            "candidate_findings": [],
+            "supporting_evidence": [],
+            "proposed_checks": [],
+            "unresolved_assumptions": [],
+        }
+        for envelope in bundle["reviewer_task_envelopes"]
+    ]
 
 
 def _init_repo(repo: Path, path: str, content: str) -> None:
@@ -351,6 +375,75 @@ class V2FeatureGraphOrchestrationTest(unittest.TestCase):
             self.assertEqual(configured.returncode, 0, configured.stderr)
             self.assertEqual(json.loads(configured.stdout), json.loads(baseline.stdout))
 
+    def test_canonical_patch_declares_all_output_indicators(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir) / "repo"
+            repo.mkdir()
+            _init_repo(repo, "configured.txt", "before\n")
+            (repo / "configured.txt").write_text("after\n", encoding="utf-8")
+            real_git = shutil.which("git")
+            self.assertIsNotNone(real_git)
+            bin_dir = Path(temp_dir) / "bin"
+            bin_dir.mkdir()
+            wrapper = bin_dir / "git"
+            wrapper.write_text(
+                "#!/usr/bin/env python3\n"
+                "import subprocess\n"
+                "import sys\n"
+                f"real_git = {real_git!r}\n"
+                "args = sys.argv[1:]\n"
+                "required = {\n"
+                "        '--output-indicator-new=+',\n"
+                "        '--output-indicator-old=-',\n"
+                "        '--output-indicator-context= ',\n"
+                "}\n"
+                "if 'diff' in args and '--patch' in args:\n"
+                "    if not required <= set(args):\n"
+                "        print('canonical output indicators missing', file=sys.stderr)\n"
+                "        raise SystemExit(97)\n"
+                "args = [arg for arg in args if arg not in required]\n"
+                "raise SystemExit(subprocess.run([real_git, *args]).returncode)\n",
+                encoding="utf-8",
+            )
+            wrapper.chmod(0o755)
+            environment = os.environ.copy()
+            environment["PATH"] = f"{bin_dir}{os.pathsep}{environment['PATH']}"
+
+            result = _resolve_local(repo, env=environment)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_hunk_records_ignore_ambient_rename_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            _git(repo, "init", "-q")
+            _git(repo, "config", "user.name", "Review Test")
+            _git(repo, "config", "user.email", "review@example.com")
+            for index in range(1, 5):
+                content = [f"file {index}\n"] + [
+                    f"shared line {line}\n" for line in range(1, 101)
+                ]
+                (repo / f"old-{index}.txt").write_text(
+                    "".join(content), encoding="utf-8"
+                )
+            _git(repo, "add", ".")
+            _git(repo, "commit", "-qm", "base")
+            for index in range(1, 5):
+                _git(repo, "mv", f"old-{index}.txt", f"new-{index}.txt")
+                path = repo / f"new-{index}.txt"
+                lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+                lines[50] = f"edited line for file {index}\n"
+                path.write_text("".join(lines), encoding="utf-8")
+            _git(repo, "add", "-A")
+            baseline = _resolve_local(repo)
+            self.assertEqual(baseline.returncode, 0, baseline.stderr)
+            _git(repo, "config", "diff.renameLimit", "1")
+
+            configured = _resolve_local(repo)
+
+            self.assertEqual(configured.returncode, 0, configured.stderr)
+            self.assertEqual(json.loads(configured.stdout), json.loads(baseline.stdout))
+
     def test_changed_lines_beginning_with_double_signs_keep_line_anchors(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo = Path(temp_dir)
@@ -452,6 +545,213 @@ class V2FeatureGraphOrchestrationTest(unittest.TestCase):
         self.assertEqual(
             {entry["primary_owner"] for entry in bundle["coverage_ledger"]["records"]},
             {"unit-auth", "unit-profile"},
+        )
+
+    def test_complete_graph_accepts_every_current_paired_result(self) -> None:
+        scope = _scope(
+            _record("record-1", "auth.py", 1),
+            _record("record-2", "profile.py", 1),
+        )
+        built = _run_contract(
+            "build-graph",
+            {
+                "scope_manifest": scope,
+                "feature_graph": _flat_graph(scope, 2),
+                "environment": {"available_agent_slots": 5},
+            },
+        )
+        self.assertEqual(built.returncode, 0, built.stderr)
+        bundle = json.loads(built.stdout)
+
+        completed = _run_contract(
+            "complete-graph",
+            {
+                "bundle": bundle,
+                "reviewer_results": _reviewer_results(bundle),
+            },
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        ledger = json.loads(completed.stdout)["coverage_ledger"]
+        self.assertTrue(ledger["complete"])
+        self.assertTrue(all(record["covered"] for record in ledger["records"]))
+
+    def test_complete_graph_rejects_results_from_a_superseded_revision(self) -> None:
+        scope = _scope(
+            _record("record-1", "auth.py", 1),
+            _record("record-2", "profile.py", 1),
+        )
+        graph = _flat_graph(scope, 2)
+        first = _run_contract(
+            "build-graph",
+            {
+                "scope_manifest": scope,
+                "feature_graph": graph,
+                "environment": {"available_agent_slots": 5},
+            },
+        )
+        self.assertEqual(first.returncode, 0, first.stderr)
+        first_bundle = json.loads(first.stdout)
+        revised_graph = copy.deepcopy(graph)
+        revised_graph["review_units"][0]["purpose"] = "Review revised auth behavior"
+        revised = _run_contract(
+            "build-graph",
+            {
+                "scope_manifest": scope,
+                "feature_graph": revised_graph,
+                "environment": {"available_agent_slots": 5},
+                "previous_review_plan": first_bundle["review_plan"],
+            },
+        )
+        self.assertEqual(revised.returncode, 0, revised.stderr)
+
+        completed = _run_contract(
+            "complete-graph",
+            {
+                "bundle": json.loads(revised.stdout),
+                "reviewer_results": _reviewer_results(first_bundle),
+            },
+        )
+
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("task_id", completed.stderr)
+
+    def test_complete_graph_preserves_partial_review_gaps(self) -> None:
+        scope = _scope(
+            *[_record(f"record-{index}", f"file-{index}.py", 1) for index in range(1, 8)]
+        )
+        graph = _flat_graph(scope, 7)
+        paused = _run_contract(
+            "build-graph",
+            {
+                "scope_manifest": scope,
+                "feature_graph": graph,
+                "environment": {"available_agent_slots": 5},
+            },
+        )
+        self.assertEqual(paused.returncode, 0, paused.stderr)
+        graph_revision = json.loads(paused.stdout)["review_plan"]["preflight"][
+            "graph_revision"
+        ]
+        partial = _run_contract(
+            "build-graph",
+            {
+                "scope_manifest": scope,
+                "feature_graph": graph,
+                "environment": {"available_agent_slots": 5},
+                "budget_decision": {
+                    "kind": "paired_partial_review",
+                    "approved": True,
+                    "graph_revision": graph_revision,
+                    "selection_basis": "risk_prioritized",
+                    "selected_unit_ids": ["unit-1", "unit-2"],
+                },
+            },
+        )
+        self.assertEqual(partial.returncode, 0, partial.stderr)
+        bundle = json.loads(partial.stdout)
+
+        completed = _run_contract(
+            "complete-graph",
+            {
+                "bundle": bundle,
+                "reviewer_results": _reviewer_results(bundle),
+            },
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        ledger = json.loads(completed.stdout)["coverage_ledger"]
+        self.assertFalse(ledger["complete"])
+        covered = {
+            entry["record_id"] for entry in ledger["records"] if entry["covered"]
+        }
+        self.assertEqual(covered, {"record-1", "record-2"})
+        self.assertEqual(
+            set(ledger["uncovered_record_ids"]),
+            {f"record-{index}" for index in range(3, 8)},
+        )
+
+    def test_context_only_integration_unit_gates_graph_completion(self) -> None:
+        scope = _scope(
+            _record("record-auth", "auth.py", 1),
+            _record("record-billing", "billing.py", 1),
+        )
+        graph = {
+            "schema_version": "2.0",
+            "scope_id": scope["scope_id"],
+            "features": [
+                _feature("feature-auth", "Auth", ["unit-auth"]),
+                _feature("feature-billing", "Billing", ["unit-billing"]),
+            ],
+            "review_units": [
+                _unit("unit-auth", "feature-auth", ["record-auth"]),
+                _unit("unit-billing", "feature-billing", ["record-billing"]),
+                {
+                    **_integration_unit(
+                        "unit-integration",
+                        [],
+                        ["unit-auth", "unit-billing"],
+                    ),
+                    "context_record_ids": ["record-auth", "record-billing"],
+                },
+            ],
+            "ownership": {
+                "record-auth": "unit-auth",
+                "record-billing": "unit-billing",
+            },
+            "edges": [
+                {
+                    "kind": "material_contract",
+                    "from_unit_id": participant,
+                    "to_unit_id": "unit-integration",
+                }
+                for participant in ("unit-auth", "unit-billing")
+            ],
+        }
+
+        built = _run_contract(
+            "build-graph",
+            {
+                "scope_manifest": scope,
+                "feature_graph": graph,
+                "environment": {"available_agent_slots": 5},
+            },
+        )
+
+        self.assertEqual(built.returncode, 0, built.stderr)
+        bundle = json.loads(built.stdout)
+        integration_state = next(
+            unit
+            for unit in bundle["coverage_ledger"]["units"]
+            if unit["unit_id"] == "unit-integration"
+        )
+        self.assertFalse(integration_state["covered"])
+        incomplete_results = [
+            result
+            for result in _reviewer_results(bundle)
+            if result["unit_id"] != "unit-integration"
+        ]
+
+        incomplete = _run_contract(
+            "complete-graph",
+            {"bundle": bundle, "reviewer_results": incomplete_results},
+        )
+        complete = _run_contract(
+            "complete-graph",
+            {"bundle": bundle, "reviewer_results": _reviewer_results(bundle)},
+        )
+
+        self.assertEqual(incomplete.returncode, 2)
+        self.assertIn("missing successful reviewer roles", incomplete.stderr)
+        self.assertEqual(complete.returncode, 0, complete.stderr)
+        completed_ledger = json.loads(complete.stdout)["coverage_ledger"]
+        self.assertTrue(completed_ledger["complete"])
+        self.assertTrue(
+            next(
+                unit["covered"]
+                for unit in completed_ledger["units"]
+                if unit["unit_id"] == "unit-integration"
+            )
         )
 
     def test_incidental_dependency_cannot_masquerade_as_integration_work(self) -> None:

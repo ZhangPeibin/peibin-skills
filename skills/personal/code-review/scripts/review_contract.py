@@ -648,9 +648,76 @@ def validate_contract(kind: str, raw_value: object) -> dict[str, Any]:
             record_ids.append(entry["record_id"])
         if len(record_ids) != len(set(record_ids)):
             raise ContractError("coverage_ledger record_id values must be unique")
+        unit_entries = value.get("units")
+        all_units_covered = True
+        if unit_entries is not None:
+            units = _require_array(unit_entries, "coverage_ledger.units")
+            unit_ids: list[str] = []
+            for index, raw_entry in enumerate(units):
+                entry = _require_object(
+                    raw_entry, f"coverage_ledger.units[{index}]"
+                )
+                _require_fields(
+                    entry,
+                    f"coverage_ledger.units[{index}]",
+                    {"unit_id", "role_status", "attempts", "covered"},
+                )
+                unit_ids.append(
+                    _require_string(
+                        entry["unit_id"],
+                        f"coverage_ledger.units[{index}].unit_id",
+                    )
+                )
+                role_status = _require_object(
+                    entry["role_status"],
+                    f"coverage_ledger.units[{index}].role_status",
+                )
+                attempts = _require_object(
+                    entry["attempts"],
+                    f"coverage_ledger.units[{index}].attempts",
+                )
+                if set(role_status) != set(ROLES) or set(attempts) != set(ROLES):
+                    raise ContractError(
+                        f"coverage_ledger.units[{index}] must track both roles"
+                    )
+                for role in ROLES:
+                    if role_status[role] not in {
+                        "pending",
+                        "completed",
+                        "failed",
+                        "incomplete",
+                        "not_selected",
+                    }:
+                        raise ContractError(
+                            f"coverage_ledger.units[{index}].role_status.{role} is unsupported"
+                        )
+                    if (
+                        not isinstance(attempts[role], int)
+                        or isinstance(attempts[role], bool)
+                        or attempts[role] < 0
+                    ):
+                        raise ContractError(
+                            f"coverage_ledger.units[{index}].attempts.{role} must be a non-negative integer"
+                        )
+                if not isinstance(entry["covered"], bool):
+                    raise ContractError(
+                        f"coverage_ledger.units[{index}].covered must be a boolean"
+                    )
+                pair_completed = all(
+                    role_status[role] == "completed" for role in ROLES
+                )
+                if entry["covered"] != pair_completed:
+                    raise ContractError(
+                        f"coverage_ledger.units[{index}] cannot claim coverage until both roles complete"
+                    )
+            if len(unit_ids) != len(set(unit_ids)):
+                raise ContractError("coverage_ledger unit_id values must be unique")
+            all_units_covered = bool(units) and all(
+                entry["covered"] for entry in units
+            )
         if not isinstance(value["complete"], bool):
             raise ContractError("coverage_ledger.complete must be a boolean")
-        all_covered = bool(value["records"]) and all(
+        all_covered = all_units_covered and bool(value["records"]) and all(
             entry["covered"] for entry in value["records"]
         )
         if value["complete"] != all_covered:
@@ -1037,6 +1104,28 @@ def _build_bundle(
             }
             for record in scope["changed_records"]
         ],
+        "units": [
+            {
+                "unit_id": unit["unit_id"],
+                "role_status": {
+                    role: (
+                        "pending"
+                        if unit["unit_id"] in selected_unit_id_set
+                        else "not_selected"
+                    )
+                    for role in ROLES
+                },
+                "attempts": {role: 0 for role in ROLES},
+                "covered": False,
+                "selected_for_review": unit["unit_id"] in selected_unit_id_set,
+                "uncovered_reason": (
+                    None
+                    if unit["unit_id"] in selected_unit_id_set
+                    else "not_selected_by_partial_review"
+                ),
+            }
+            for unit in graph_units
+        ],
         "uncovered_record_ids": unselected_record_ids,
         "complete": False,
     }
@@ -1119,7 +1208,7 @@ def build_one_unit(
     return _build_bundle(scope, feature_graph, {})
 
 
-def complete_one_unit(raw_value: object) -> dict[str, Any]:
+def complete_graph(raw_value: object) -> dict[str, Any]:
     value = _require_object(raw_value, "completion input")
     _require_fields(value, "completion input", {"bundle", "reviewer_results"})
     bundle = _require_object(value["bundle"], "bundle")
@@ -1140,84 +1229,163 @@ def complete_one_unit(raw_value: object) -> dict[str, Any]:
     ledger = validate_contract("coverage_ledger", bundle["coverage_ledger"])
     if any(item["scope_id"] != scope["scope_id"] for item in (graph, plan, ledger)):
         raise ContractError("bundle contracts do not share one frozen scope_id")
-    units = graph["review_units"]
-    if not isinstance(units, list) or len(units) != 1:
-        raise ContractError("complete-one-unit requires exactly one Review Unit")
-    unit = _require_object(units[0], "feature_graph.review_units[0]")
-    _require_fields(unit, "feature_graph.review_units[0]", {"unit_id", "changed_record_ids"})
-    record_ids = set(unit["changed_record_ids"])
+
+    units = {
+        unit["unit_id"]: unit
+        for unit in graph["review_units"]
+        if unit.get("executable") is True
+    }
     scope_record_ids = {record["record_id"] for record in scope["changed_records"]}
-    if record_ids != scope_record_ids or set(graph["ownership"]) != scope_record_ids:
+    if set(graph["ownership"]) != scope_record_ids:
         raise ContractError(
             "Feature Graph ownership must cover every Scope Manifest changed record"
         )
-    if graph["ownership"] != {
-        record_id: unit["unit_id"] for record_id in scope_record_ids
-    }:
-        raise ContractError("Feature Graph ownership does not match the localized unit")
-    if plan["unit_ids"] != [unit["unit_id"]]:
-        raise ContractError("Review Plan units do not match the Feature Graph")
+
+    preflight = _require_object(plan["preflight"], "review_plan.preflight")
+    if preflight.get("status") not in {"ready", "ready_partial"}:
+        raise ContractError("cannot complete a Review Plan that was not ready for dispatch")
+    graph_revision = _graph_revision(graph)
+    if preflight.get("graph_revision") != graph_revision:
+        raise ContractError("Review Plan graph revision does not match the Feature Graph")
     if plan["policy_version"] != CORE_POLICY["version"]:
         raise ContractError("Review Plan policy version does not match the core policy")
-    expected_assignments = {
-        assignment["role"]: assignment
-        for assignment in plan["assignments"]
-        if assignment.get("unit_id") == unit["unit_id"]
+
+    selected_unit_ids = set(plan["unit_ids"])
+    if not selected_unit_ids or not selected_unit_ids <= set(units):
+        raise ContractError("Review Plan units do not match the Feature Graph")
+    if preflight["status"] == "ready" and selected_unit_ids != set(units):
+        raise ContractError("a complete Review Plan must select every executable unit")
+    expected_unselected_units = set(units) - selected_unit_ids
+    if set(preflight.get("unselected_unit_ids", [])) != expected_unselected_units:
+        raise ContractError("Review Plan unselected units do not match the Feature Graph")
+    expected_unselected_records = {
+        record_id
+        for record_id, owner in graph["ownership"].items()
+        if owner in expected_unselected_units
     }
-    if set(expected_assignments) != set(ROLES):
-        raise ContractError("the Review Unit must have exactly the two required roles")
+    if set(preflight.get("unselected_record_ids", [])) != expected_unselected_records:
+        raise ContractError("Review Plan uncovered records do not match selected units")
+
+    expected_assignments: dict[tuple[str, str], dict[str, Any]] = {}
+    for assignment in plan["assignments"]:
+        key = (assignment["unit_id"], assignment["role"])
+        if assignment["task_id"] != _stable_id(
+            "task", scope["scope_id"], graph_revision, *key
+        ):
+            raise ContractError(
+                f"Review Plan task_id does not match graph revision for {key[0]} {key[1]}"
+            )
+        if assignment["attempt"] != 1:
+            raise ContractError("Review Plan completion requires the first planned attempt")
+        expected_assignments[key] = assignment
 
     raw_envelopes = _require_array(
         bundle["reviewer_task_envelopes"], "bundle.reviewer_task_envelopes"
     )
-    if len(raw_envelopes) != len(ROLES):
-        raise ContractError("the Review Unit must have exactly two task envelopes")
-    envelopes: dict[str, dict[str, Any]] = {}
+    if len(raw_envelopes) != len(expected_assignments):
+        raise ContractError("reviewer task envelopes must match every planned assignment")
+    envelopes: dict[tuple[str, str], dict[str, Any]] = {}
     for raw_envelope in raw_envelopes:
         envelope = validate_contract("reviewer_task_envelope", raw_envelope)
-        role = envelope["role"]
-        if role in envelopes:
-            raise ContractError(f"duplicate reviewer task envelope for role {role}")
-        assignment = expected_assignments.get(role)
+        key = (envelope["unit_id"], envelope["role"])
+        if key in envelopes:
+            raise ContractError(
+                f"duplicate reviewer task envelope for {key[0]} {key[1]}"
+            )
+        assignment = expected_assignments.get(key)
         if assignment is None or envelope["task_id"] != assignment["task_id"]:
-            raise ContractError(f"reviewer task envelope does not match plan for {role}")
+            raise ContractError(
+                f"reviewer task envelope does not match plan for {key[0]} {key[1]}"
+            )
         if envelope["scope_id"] != scope["scope_id"]:
-            raise ContractError(f"reviewer task envelope scope does not match for {role}")
-        if envelope["unit_id"] != unit["unit_id"]:
-            raise ContractError(f"reviewer task envelope unit does not match for {role}")
+            raise ContractError(
+                f"reviewer task envelope scope does not match for {key[0]} {key[1]}"
+            )
+        if envelope.get("graph_revision") != graph_revision:
+            raise ContractError(
+                f"reviewer task envelope graph revision does not match for {key[0]} {key[1]}"
+            )
+        record_ids = set(units[key[0]]["changed_record_ids"])
         if set(envelope["changed_record_ids"]) != record_ids:
             raise ContractError(
-                f"reviewer task envelope evidence does not match owned scope for {role}"
+                f"reviewer task envelope evidence does not match owned scope for {key[0]} {key[1]}"
             )
-        envelopes[role] = envelope
-    if set(envelopes) != set(ROLES):
-        raise ContractError("reviewer task envelopes must cover both required roles")
+        if set(envelope.get("context_record_ids", [])) != set(
+            units[key[0]].get("context_record_ids", [])
+        ):
+            raise ContractError(
+                f"reviewer task envelope context does not match the Feature Graph for {key[0]} {key[1]}"
+            )
+        envelopes[key] = envelope
+    if set(envelopes) != set(expected_assignments):
+        raise ContractError("reviewer task envelopes must cover every planned role")
+
+    ledger_by_record = {
+        entry["record_id"]: entry for entry in ledger["records"]
+    }
+    if set(ledger_by_record) != scope_record_ids:
+        raise ContractError("Coverage Ledger records do not match the Scope Manifest")
+    for record_id, entry in ledger_by_record.items():
+        owner = graph["ownership"][record_id]
+        if entry["primary_owner"] != owner:
+            raise ContractError("Coverage Ledger primary owner does not match Feature Graph")
+        selected = owner in selected_unit_ids
+        expected_status = "pending" if selected else "not_selected"
+        if set(entry["role_status"].values()) != {expected_status}:
+            raise ContractError("Coverage Ledger role state does not match Review Plan selection")
+        if set(entry["attempts"].values()) != {0} or entry["covered"]:
+            raise ContractError("Coverage Ledger must be pending before result completion")
+        if entry.get("selected_for_review", selected) is not selected:
+            raise ContractError("Coverage Ledger record selection does not match Review Plan")
+    if set(ledger.get("uncovered_record_ids", [])) != expected_unselected_records:
+        raise ContractError("Coverage Ledger uncovered records do not match Review Plan")
+    ledger_units = _require_array(ledger.get("units"), "coverage_ledger.units")
+    ledger_by_unit = {entry["unit_id"]: entry for entry in ledger_units}
+    if set(ledger_by_unit) != set(units) or len(ledger_by_unit) != len(ledger_units):
+        raise ContractError("Coverage Ledger units do not match the Feature Graph")
+    for unit_id, entry in ledger_by_unit.items():
+        expected_status = "pending" if unit_id in selected_unit_ids else "not_selected"
+        if set(entry["role_status"].values()) != {expected_status}:
+            raise ContractError("Coverage Ledger unit state does not match Review Plan selection")
+        if set(entry["attempts"].values()) != {0} or entry["covered"]:
+            raise ContractError("Coverage Ledger units must be pending before result completion")
+        selected = unit_id in selected_unit_ids
+        if entry.get("selected_for_review", selected) is not selected:
+            raise ContractError("Coverage Ledger unit selection does not match Review Plan")
 
     raw_results = value["reviewer_results"]
     if not isinstance(raw_results, list):
         raise ContractError("reviewer_results must be an array")
-    results: dict[str, dict[str, Any]] = {}
+    results: dict[tuple[str, str], dict[str, Any]] = {}
     for raw_result in raw_results:
         result = validate_contract("reviewer_result", raw_result)
-        role = result["role"]
-        if role in results:
-            raise ContractError(f"duplicate reviewer result for role {role}")
-        assignment = expected_assignments.get(role)
+        key = (result["unit_id"], result["role"])
+        if key in results:
+            raise ContractError(f"duplicate reviewer result for {key[0]} {key[1]}")
+        assignment = expected_assignments.get(key)
         if assignment is None:
-            raise ContractError(f"unplanned reviewer role: {role}")
+            raise ContractError(f"unplanned reviewer result: {key[0]} {key[1]}")
         if result["task_id"] != assignment["task_id"]:
-            raise ContractError(f"reviewer result task_id does not match plan for {role}")
+            raise ContractError(
+                f"reviewer result task_id does not match plan for {key[0]} {key[1]}"
+            )
         if result["scope_id"] != scope["scope_id"]:
-            raise ContractError(f"reviewer result scope_id does not match for {role}")
-        if result["unit_id"] != unit["unit_id"]:
-            raise ContractError(f"reviewer result unit_id does not match for {role}")
+            raise ContractError(
+                f"reviewer result scope_id does not match for {key[0]} {key[1]}"
+            )
         if result["status"] != "completed":
-            raise ContractError(f"reviewer role {role} did not complete successfully")
+            raise ContractError(
+                f"reviewer role {key[0]} {key[1]} did not complete successfully"
+            )
+        record_ids = set(units[key[0]]["changed_record_ids"])
         if set(result["inspected_record_ids"]) != record_ids:
-            raise ContractError(f"reviewer role {role} did not inspect the complete owned scope")
+            raise ContractError(
+                f"reviewer role {key[0]} {key[1]} did not inspect the complete owned scope"
+            )
         frozen_anchors = {
             json.dumps(record["anchor"], sort_keys=True, separators=(",", ":"))
             for record in scope["changed_records"]
+            if record["record_id"] in record_ids
         }
         for candidate in result["candidate_findings"]:
             candidate_anchor = json.dumps(
@@ -1225,28 +1393,40 @@ def complete_one_unit(raw_value: object) -> dict[str, Any]:
             )
             if candidate_anchor not in frozen_anchors:
                 raise ContractError(
-                    f"reviewer role {role} candidate anchor is not in the frozen Scope Manifest"
+                    f"reviewer role {key[0]} {key[1]} candidate anchor is not in the frozen Scope Manifest owned evidence"
                 )
-        results[role] = result
-    if set(results) != set(ROLES):
-        missing = sorted(set(ROLES) - results.keys())
-        raise ContractError(f"missing successful reviewer roles: {', '.join(missing)}")
+        results[key] = result
+    if set(results) != set(expected_assignments):
+        missing = sorted(set(expected_assignments) - set(results))
+        missing_names = ", ".join(f"{unit_id}/{role}" for unit_id, role in missing)
+        raise ContractError(f"missing successful reviewer roles: {missing_names}")
 
     completed_ledger = copy.deepcopy(ledger)
-    ledger_ids = {entry["record_id"] for entry in completed_ledger["records"]}
-    if ledger_ids != record_ids:
-        raise ContractError("Coverage Ledger records do not match Review Unit ownership")
     for entry in completed_ledger["records"]:
-        if entry["primary_owner"] != graph["ownership"][entry["record_id"]]:
-            raise ContractError("Coverage Ledger primary owner does not match Feature Graph")
+        if entry["primary_owner"] not in selected_unit_ids:
+            continue
         entry["role_status"] = {role: "completed" for role in ROLES}
         entry["attempts"] = {role: 1 for role in ROLES}
         entry["covered"] = True
-    completed_ledger["complete"] = True
+    for entry in completed_ledger["units"]:
+        if entry["unit_id"] not in selected_unit_ids:
+            continue
+        entry["role_status"] = {role: "completed" for role in ROLES}
+        entry["attempts"] = {role: 1 for role in ROLES}
+        entry["covered"] = True
+    completed_ledger["complete"] = all(
+        entry["covered"] for entry in completed_ledger["records"]
+    ) and all(entry["covered"] for entry in completed_ledger["units"])
+    validate_contract("coverage_ledger", completed_ledger)
 
     candidates = [
-        {"task_id": result["task_id"], "role": role, "candidate": candidate}
-        for role, result in results.items()
+        {
+            "task_id": result["task_id"],
+            "unit_id": unit_id,
+            "role": role,
+            "candidate": candidate,
+        }
+        for (unit_id, role), result in results.items()
         for candidate in result["candidate_findings"]
     ]
     return {
@@ -1254,6 +1434,16 @@ def complete_one_unit(raw_value: object) -> dict[str, Any]:
         "candidate_findings": candidates,
         "main_agent_action": "verify, deduplicate, calibrate, and report through the evidence gate",
     }
+
+
+def complete_one_unit(raw_value: object) -> dict[str, Any]:
+    value = _require_object(raw_value, "completion input")
+    bundle = _require_object(value.get("bundle"), "bundle")
+    graph = _require_object(bundle.get("feature_graph"), "feature_graph")
+    units = graph.get("review_units")
+    if not isinstance(units, list) or len(units) != 1:
+        raise ContractError("complete-one-unit requires exactly one Review Unit")
+    return complete_graph(raw_value)
 
 
 def _read_stdin() -> object:
@@ -1278,6 +1468,10 @@ def _parser() -> argparse.ArgumentParser:
         help="validate a semantic Feature Graph and build its paired review plan",
     )
     subparsers.add_parser(
+        "complete-graph",
+        help="accept current paired results for every selected Review Unit",
+    )
+    subparsers.add_parser(
         "complete-one-unit",
         help="accept exactly one successful isolated result for each planned role",
     )
@@ -1296,6 +1490,8 @@ def main() -> int:
             )
         elif args.command == "build-graph":
             output = build_graph(value)
+        elif args.command == "complete-graph":
+            output = complete_graph(value)
         else:
             output = complete_one_unit(value)
     except ContractError as exc:
