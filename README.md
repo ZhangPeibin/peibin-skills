@@ -51,6 +51,7 @@ $to-spec -> $to-tickets
 | [setup-engineering-workflow](./skills/personal/setup-engineering-workflow/) | Configure issue tracking, labels, domain docs, and pre-PRD docs | A repository is adopting the workflow |
 | [tickets](./skills/personal/tickets/) | Manage the state of a local `to-tickets` DAG | Tickets need to be inspected, activated, completed, or paused |
 | [handoff](./skills/personal/handoff/) | Use `$handoff` to create a durable, versioned Markdown handoff | Work must continue in another session |
+| [code-review](./skills/personal/code-review/) | Review a scoped change for concrete, evidence-backed regressions | Local changes, commits, branches, or PRs need review |
 | [init-flutter-app](./skills/personal/flutter/init-flutter-app/) | Scaffold a Flutter app from `flutter-template` | Starting a Flutter project |
 | [add-flutter-feature](./skills/personal/flutter/add-flutter-feature/) | Add a layered feature to a `flutter-template` project | Extending an existing Flutter app |
 
@@ -60,9 +61,9 @@ $to-spec -> $to-tickets
 
 The vendored [Matt Pocock skills](./skills/vendor/mattpocock/) are kept as a selective local fork. The source revision is recorded in [`SOURCE.json`](./skills/vendor/mattpocock/SOURCE.json), and the upstream MIT license is preserved alongside it.
 
-The plugin currently enables `writing-great-skills` and the workflow built from `grill-with-docs`, `to-spec`, `to-tickets`, `implement`, `tdd`, and `code-review`. It also enables the personal workflow skills and the `grilling` and `domain-modeling` dependencies. Other vendored skills remain available as source but are not loaded by default.
+The plugin currently enables `writing-great-skills`, the vendored workflow stages from `grill-with-docs` through `tdd`, and the maintained personal `code-review` that closes the review stage. It also enables the other personal workflow skills and the `grilling` and `domain-modeling` dependencies. Other vendored skills remain available as source but are not loaded by default.
 
-Both personal and vendor collections contain a skill named `handoff`. The personal version is canonical and is the only one registered in the plugin; the vendor version is retained as reference source.
+Both personal and vendor collections contain skills named `handoff` and `code-review`. The personal versions are canonical and are the only copies registered in the plugin; the vendor versions are retained as reference source.
 
 `$handoff` creates a full handoff by default. Use `$handoff --compact` for frequent continuation; both profiles support artifact-only output through `$handoff --artifact-only` and `$handoff --compact --artifact-only`.
 
@@ -89,6 +90,7 @@ ln -s /path/to/peibin-skills/skills/personal/requirements-analysis ~/.agents/ski
 ln -s /path/to/peibin-skills/skills/personal/setup-engineering-workflow ~/.agents/skills/setup-engineering-workflow
 ln -s /path/to/peibin-skills/skills/personal/tickets ~/.agents/skills/tickets
 ln -s /path/to/peibin-skills/skills/personal/handoff ~/.agents/skills/handoff
+ln -s /path/to/peibin-skills/skills/personal/code-review ~/.agents/skills/code-review
 ln -s /path/to/peibin-skills/skills/personal/flutter/init-flutter-app ~/.agents/skills/init-flutter-app
 ln -s /path/to/peibin-skills/skills/personal/flutter/add-flutter-feature ~/.agents/skills/add-flutter-feature
 ```
@@ -110,24 +112,26 @@ ln -s /path/to/peibin-skills/skills/personal/requirements-analysis ~/.cursor/ski
 ln -s /path/to/peibin-skills/skills/personal/setup-engineering-workflow ~/.cursor/skills/setup-engineering-workflow
 ln -s /path/to/peibin-skills/skills/personal/tickets ~/.cursor/skills/tickets
 ln -s /path/to/peibin-skills/skills/personal/handoff ~/.cursor/skills/handoff
+ln -s /path/to/peibin-skills/skills/personal/code-review ~/.cursor/skills/code-review
 ln -s /path/to/peibin-skills/skills/personal/flutter/init-flutter-app ~/.cursor/skills/init-flutter-app
 ln -s /path/to/peibin-skills/skills/personal/flutter/add-flutter-feature ~/.cursor/skills/add-flutter-feature
 ```
 
 ### `npx skills`
 
-Install the canonical personal `handoff` directly so name deduplication cannot select the vendored copy:
+Install the canonical personal `handoff` and `code-review` directly so name deduplication cannot select the vendored copies:
 
 ```bash
 npx skills add /path/to/peibin-skills/skills/personal/handoff --agent codex --copy -y
+npx skills add /path/to/peibin-skills/skills/personal/code-review --agent codex --copy -y
 ```
 
-Do not install `handoff` through repository-root `--full-depth` discovery. The installer deduplicates skills by name, so its list does not prove which copy was selected. Root discovery remains suitable for explicitly named skills without collisions.
+Do not install `handoff` or `code-review` through repository-root `--full-depth` discovery. The installer deduplicates skills by name, so its list does not prove which copy was selected. Root discovery remains suitable for explicitly named skills without collisions.
 
 Install the main workflow and its dependencies:
 
 ```bash
-npx skills add /path/to/peibin-skills --full-depth --skill setup-engineering-workflow requirements-analysis grill-with-docs to-spec to-tickets implement tdd code-review grilling domain-modeling
+npx skills add /path/to/peibin-skills --full-depth --skill setup-engineering-workflow requirements-analysis grill-with-docs to-spec to-tickets implement tdd grilling domain-modeling
 ```
 
 The installer may create or update `skills-lock.json` in the consuming project; this source repository does not maintain that lock file.

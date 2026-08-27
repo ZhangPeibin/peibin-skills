@@ -7,6 +7,7 @@
         "./skills/personal/tickets",
         "./skills/personal/handoff",
         "./skills/personal/to-mermaid",
+        "./skills/personal/code-review",
         "./skills/personal/to-commits",
         "./skills/personal/to-pr",
         "./skills/personal/flutter/init-flutter-app",
@@ -18,7 +19,6 @@
         "./skills/vendor/mattpocock/engineering/to-spec",
         "./skills/vendor/mattpocock/engineering/to-tickets",
         "./skills/vendor/mattpocock/engineering/implement",
-        "./skills/vendor/mattpocock/engineering/tdd",
-        "./skills/vendor/mattpocock/engineering/code-review"
+        "./skills/vendor/mattpocock/engineering/tdd"
     ]
 }

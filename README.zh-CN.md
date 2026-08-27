@@ -51,6 +51,7 @@ $to-spec -> $to-tickets
 | [setup-engineering-workflow](./skills/personal/setup-engineering-workflow/) | 配置 issue tracker、标签、领域文档和 pre-PRD 文档 | 仓库准备采用这套工作流 |
 | [tickets](./skills/personal/tickets/) | 管理本地 `to-tickets` DAG 的状态 | 需要查看、领取、完成或暂停 Ticket |
 | [handoff](./skills/personal/handoff/) | 使用 `$handoff` 生成可持久恢复的版本化 Markdown 交接物 | 工作需要在另一个会话继续 |
+| [code-review](./skills/personal/code-review/) | 审查指定改动并报告有明确证据的回归 | 本地改动、commit、分支或 PR 需要审查 |
 | [init-flutter-app](./skills/personal/flutter/init-flutter-app/) | 从 `flutter-template` 初始化 Flutter 应用 | 创建新的 Flutter 项目 |
 | [add-flutter-feature](./skills/personal/flutter/add-flutter-feature/) | 给 `flutter-template` 项目增加分层 Feature | 扩展已有 Flutter 应用 |
 
@@ -60,9 +61,9 @@ $to-spec -> $to-tickets
 
 本仓库中的 [Matt Pocock Skills](./skills/vendor/mattpocock/) 是一个经过筛选的本地 fork。来源 revision 记录在 [`SOURCE.json`](./skills/vendor/mattpocock/SOURCE.json)，上游 MIT 许可证也保存在同一目录。
 
-Claude Code 插件当前启用了 `writing-great-skills`，以及由 `grill-with-docs`、`to-spec`、`to-tickets`、`implement`、`tdd` 和 `code-review` 组成的工程工作流。插件同时启用 personal 工作流 Skills，以及 `grilling` 和 `domain-modeling` 依赖。其他 vendor Skills 保留源码，但默认不加载。
+Claude Code 插件当前启用了 `writing-great-skills`、从 `grill-with-docs` 到 `tdd` 的 vendor 工作流阶段，以及负责收尾审查的 personal `code-review`。插件同时启用其他 personal 工作流 Skills，以及 `grilling` 和 `domain-modeling` 依赖。其他 vendor Skills 保留源码，但默认不加载。
 
-personal 和 vendor 中都存在名为 `handoff` 的 Skill。personal 版本是 canonical 版本，也是插件中唯一注册的版本；vendor `handoff` 仅作为参考源码保留。
+personal 和 vendor 中都存在名为 `handoff` 和 `code-review` 的 Skill。personal 版本是 canonical 版本，也是插件中唯一注册的版本；vendor 版本仅作为参考源码保留。
 
 `$handoff` 默认生成完整交接；高频续接可使用 `$handoff --compact`。两种档位都支持 artifact-only 输出：`$handoff --artifact-only` 和 `$handoff --compact --artifact-only`。
 
@@ -89,6 +90,7 @@ ln -s /path/to/peibin-skills/skills/personal/requirements-analysis ~/.agents/ski
 ln -s /path/to/peibin-skills/skills/personal/setup-engineering-workflow ~/.agents/skills/setup-engineering-workflow
 ln -s /path/to/peibin-skills/skills/personal/tickets ~/.agents/skills/tickets
 ln -s /path/to/peibin-skills/skills/personal/handoff ~/.agents/skills/handoff
+ln -s /path/to/peibin-skills/skills/personal/code-review ~/.agents/skills/code-review
 ln -s /path/to/peibin-skills/skills/personal/flutter/init-flutter-app ~/.agents/skills/init-flutter-app
 ln -s /path/to/peibin-skills/skills/personal/flutter/add-flutter-feature ~/.agents/skills/add-flutter-feature
 ```
@@ -110,24 +112,26 @@ ln -s /path/to/peibin-skills/skills/personal/requirements-analysis ~/.cursor/ski
 ln -s /path/to/peibin-skills/skills/personal/setup-engineering-workflow ~/.cursor/skills/setup-engineering-workflow
 ln -s /path/to/peibin-skills/skills/personal/tickets ~/.cursor/skills/tickets
 ln -s /path/to/peibin-skills/skills/personal/handoff ~/.cursor/skills/handoff
+ln -s /path/to/peibin-skills/skills/personal/code-review ~/.cursor/skills/code-review
 ln -s /path/to/peibin-skills/skills/personal/flutter/init-flutter-app ~/.cursor/skills/init-flutter-app
 ln -s /path/to/peibin-skills/skills/personal/flutter/add-flutter-feature ~/.cursor/skills/add-flutter-feature
 ```
 
 ### `npx skills`
 
-直接安装 canonical 的 personal `handoff`，避免名称去重选择 vendor 副本：
+直接安装 canonical 的 personal `handoff` 和 `code-review`，避免名称去重选择 vendor 副本：
 
 ```bash
 npx skills add /path/to/peibin-skills/skills/personal/handoff --agent codex --copy -y
+npx skills add /path/to/peibin-skills/skills/personal/code-review --agent codex --copy -y
 ```
 
-不要通过仓库根目录的 `--full-depth` discovery 安装 `handoff`。installer 会按名称去重，因此其列表无法证明最终选择了哪个副本。根目录 discovery 仍适合安装没有同名冲突的明确 Skill。
+不要通过仓库根目录的 `--full-depth` discovery 安装 `handoff` 或 `code-review`。installer 会按名称去重，因此其列表无法证明最终选择了哪个副本。根目录 discovery 仍适合安装没有同名冲突的明确 Skill。
 
 安装主要工程工作流及其依赖：
 
 ```bash
-npx skills add /path/to/peibin-skills --full-depth --skill setup-engineering-workflow requirements-analysis grill-with-docs to-spec to-tickets implement tdd code-review grilling domain-modeling
+npx skills add /path/to/peibin-skills --full-depth --skill setup-engineering-workflow requirements-analysis grill-with-docs to-spec to-tickets implement tdd grilling domain-modeling
 ```
 
 installer 可能在消费项目中创建或更新 `skills-lock.json`；本源码仓库不维护该锁文件。

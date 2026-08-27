@@ -154,6 +154,16 @@ def _validate_links(path: Path, errors: ValidationErrors) -> None:
             errors.add(f"{_relative(path)}: missing local link target {target!r}")
 
 
+def _duplicate_registered_skill_names(
+    plugin_names: dict[str, list[str]],
+) -> dict[str, list[str]]:
+    return {
+        name: paths
+        for name, paths in sorted(plugin_names.items())
+        if len(paths) > 1
+    }
+
+
 def main() -> int:
     errors = ValidationErrors()
     try:
@@ -176,6 +186,7 @@ def main() -> int:
     )
 
     plugin_roots: list[Path] = []
+    plugin_names: dict[str, list[str]] = {}
     for raw_path in raw_paths:
         skill_root = (ROOT / raw_path).resolve()
         if not skill_root.is_dir():
@@ -185,6 +196,21 @@ def main() -> int:
             continue
         plugin_roots.append(skill_root)
         _validate_skill(skill_root, errors)
+        try:
+            registered_name = _frontmatter(skill_root / "SKILL.md").get("name")
+        except (OSError, UnicodeError, TypeError, ValueError, yaml.YAMLError):
+            continue
+        if isinstance(registered_name, str):
+            plugin_names.setdefault(registered_name, []).append(raw_path)
+
+    for registered_name, registered_paths in _duplicate_registered_skill_names(
+        plugin_names
+    ).items():
+        errors.add(
+            ".claude-plugin/plugin.json: skill name "
+            f"{registered_name!r} is registered more than once: "
+            + ", ".join(registered_paths),
+        )
 
     personal_roots = sorted(
         path.parent for path in (ROOT / "skills" / "personal").glob("**/SKILL.md")

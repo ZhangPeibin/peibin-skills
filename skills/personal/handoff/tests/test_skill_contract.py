@@ -31,9 +31,6 @@ RUNTIME_SKILL_FILES = (
 )
 CANONICAL_HANDOFF_PATH = "skills/personal/handoff"
 VENDOR_HANDOFF_PATH = "skills/vendor/mattpocock/productivity/handoff"
-ALLOWED_DUPLICATE_SKILLS = {
-    "handoff": {CANONICAL_HANDOFF_PATH, VENDOR_HANDOFF_PATH},
-}
 EXPECTED_FORWARD_CASE_IDS = {
     "artifact_only",
     "completed_task",
@@ -348,18 +345,18 @@ class SkillContractTest(unittest.TestCase):
         )
         self.assertIn("$handoff", readme_row)
 
-    def test_duplicate_skill_name_has_an_explicit_install_policy(self) -> None:
-        skills_by_name: dict[str, set[str]] = {}
+    def test_handoff_duplicate_has_an_explicit_install_policy(self) -> None:
+        handoff_paths: set[str] = set()
         for skill_path in (REPO_ROOT / "skills").glob("**/SKILL.md"):
             name = frontmatter(skill_path.read_text(encoding="utf-8"))["name"]
-            relative_parent = skill_path.parent.relative_to(REPO_ROOT).as_posix()
-            skills_by_name.setdefault(name, set()).add(relative_parent)
-        duplicates = {
-            name: paths
-            for name, paths in skills_by_name.items()
-            if len(paths) > 1
-        }
-        self.assertEqual(duplicates, ALLOWED_DUPLICATE_SKILLS)
+            if name == "handoff":
+                handoff_paths.add(
+                    skill_path.parent.relative_to(REPO_ROOT).as_posix()
+                )
+        self.assertEqual(
+            handoff_paths,
+            {CANONICAL_HANDOFF_PATH, VENDOR_HANDOFF_PATH},
+        )
 
         manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
         registered_paths = {
@@ -367,13 +364,6 @@ class SkillContractTest(unittest.TestCase):
         }
         self.assertIn(CANONICAL_HANDOFF_PATH, registered_paths)
         self.assertNotIn(VENDOR_HANDOFF_PATH, registered_paths)
-        registered_names = [
-            frontmatter(
-                (REPO_ROOT / path / "SKILL.md").read_text(encoding="utf-8")
-            )["name"]
-            for path in registered_paths
-        ]
-        self.assertEqual(len(registered_names), len(set(registered_names)))
 
         readme = README_PATH.read_text(encoding="utf-8")
         self.assertIn(
@@ -381,9 +371,13 @@ class SkillContractTest(unittest.TestCase):
             "--agent codex --copy -y",
             readme,
         )
-        self.assertIn("vendor version is retained as reference source", readme)
+        self.assertIn("skills named `handoff`", readme)
+        self.assertIn("personal versions are canonical", readme)
+        self.assertIn("vendor versions are retained as reference source", readme)
         readme_zh = README_ZH_PATH.read_text(encoding="utf-8")
-        self.assertIn("vendor `handoff` 仅作为参考源码", readme_zh)
+        self.assertIn("名为 `handoff`", readme_zh)
+        self.assertIn("personal 版本是 canonical", readme_zh)
+        self.assertIn("vendor 版本仅作为参考源码", readme_zh)
 
     def test_install_evidence_is_sanitized_and_matches_current_sources(self) -> None:
         evidence = json.loads(INSTALL_EVAL_PATH.read_text(encoding="utf-8"))

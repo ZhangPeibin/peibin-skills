@@ -1,0 +1,4 @@
+interface:
+  display_name: "Code Review"
+  short_description: "Find concrete regressions in a scoped code change"
+  default_prompt: "Use $code-review to review the current changes and report evidence-backed findings."
