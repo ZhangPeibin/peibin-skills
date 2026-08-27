@@ -74,23 +74,44 @@ review observable behavior and say requirement conformance could not be fully as
 
 Read the complete frozen change once, then enough surrounding code to identify its
 functional purpose, callers, consumers, interfaces, guards, error paths, configuration,
-and tests. For this localized baseline, create one functional Review Unit owning every
-changed record. Feature meaning and ownership are agent judgments; never infer them from
-directory layout or file count alone.
+and tests. Build a Feature Graph from end-to-end behaviors, state transitions, and
+contracts. Assign every changed record to exactly one executable Review Unit; records
+from separate hunks in one file may belong to different features. Other units may receive
+records as context without becoming their primary owner. Feature meaning and ownership
+are agent judgments; never infer them from directory layout, parser output, or equal-sized
+diff chunks.
+
+Create an Integration Review Unit only for a material cross-feature contract that no
+participating feature can validate end to end and whose failure could affect behavior,
+security, data integrity, concurrency, compatibility, migration, or deployment. Imports,
+shared types, and stable utilities are not sufficient by themselves. When a feature does
+not fit its context allowance or contains independently verifiable workflows, retain it
+as a logical parent and split executable children along behavior, state-transition, or
+contract boundaries. Do not dispatch the parent for a redundant pair.
 
 When changes affect authentication or authorization, trust boundaries, persistent data
 or migrations, concurrency or retries, public APIs or stored/wire contracts, or similarly
 broad failure domains, read [risk-review.md](references/risk-review.md). Do not load that
 heavier guidance for a trivial localized change.
 
-## 3. Build and dispatch one paired Review Unit
+## 3. Preflight and dispatch paired Review Units
 
 Read [contracts-v2.md](references/contracts-v2.md), validate the Scope Manifest, and
-build the ephemeral v2 bundle. It contains a Feature Graph, Review Plan, two Reviewer
-Task Envelopes, and a pending Coverage Ledger. Keep these records in agent messages or
-process memory; never persist them in the reviewed repository.
+build the ephemeral v2 bundle. Keep its Feature Graph, Review Plan, Reviewer Task
+Envelopes, and pending Coverage Ledger in agent messages or process memory; never persist
+them in the reviewed repository. Preflight before dispatch and again whenever the graph
+grows.
 
-Dispatch exactly two fresh, isolated standard-agent contexts for the unit:
+The standard profile permits six executable units and twelve required reviewer passes,
+with up to four active reviewer agents after reserving the main agent. Preserve at least
+30 percent of usable reviewer context for exploration, reasoning, and output. Lower host
+capacity adds waves; it never removes a role. If the plan exceeds a soft limit, stop and
+offer explicit scope reduction, budget expansion, or risk-prioritized partial review.
+Partial review selects whole units, keeps both roles for each selected unit, and lists all
+unselected records as uncovered. Never dispatch tasks from a paused preflight.
+
+For every selected executable Feature or Integration Review Unit, dispatch exactly two
+fresh, isolated standard-agent contexts:
 
 - **Internal behavior:** attack business logic, state transitions, boundary conditions,
   invariants, and error paths.
@@ -107,8 +128,8 @@ coverage gap.
 Each reviewer returns a Reviewer Result containing inspected record IDs, candidate
 findings and evidence, proposed checks, and unresolved assumptions. A candidate is not
 a final finding. Reject malformed, wrong-snapshot, wrong-unit, wrong-role, or incomplete
-results. The localized unit becomes covered only after one valid result from each role
-inspects every owned changed record.
+results. A unit becomes covered only after one valid result from each role inspects every
+owned changed record.
 
 ## 4. Verify candidates through the evidence gate
 
@@ -163,7 +184,7 @@ If no issue passes the gate, say **No findings**. Do not invent one. Then includ
 - material questions or assumptions;
 - checks actually run and their passed, failed, or inconclusive results;
 - the resolved scope and exclusions; and
-- a coverage summary naming the unit, both role states, covered record count, uncovered
+- a coverage summary naming the units, both role states, covered record count, uncovered
   records, and any snapshot or verification gap.
 
 Keep any change summary secondary to findings. Distinguish checks not run from checks that

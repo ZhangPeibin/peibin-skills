@@ -1,20 +1,24 @@
-# V2 Contracts: Localized Paired Review
+# V2 Contracts: Feature Graph Orchestration
 
-Use this reference after scope resolution for the one-Review-Unit v2 baseline. All records
-are JSON-compatible and use schema major version `2`. Missing required fields and another
-major version fail validation; additive fields are retained or ignored safely.
+Use this reference after scope resolution when constructing, preflighting, or dispatching
+the Feature Graph. All records are JSON-compatible and use schema major version `2`.
+Missing required fields and another major version fail validation; additive fields are
+retained or ignored safely.
 
 The helper reads JSON from stdin and writes JSON to stdout:
 
 ```bash
 python3 scripts/review_contract.py validate --kind scope_manifest
 python3 scripts/review_contract.py build-one-unit --unit-id <stable-id> --feature-name '<name>'
+python3 scripts/review_contract.py build-graph
 python3 scripts/review_contract.py validate --kind reviewer_result
 python3 scripts/review_contract.py complete-one-unit
 ```
 
-Pass the Scope Manifest to `build-one-unit`. Pass an object containing `bundle` and
-`reviewer_results` to `complete-one-unit`. Keep inputs and outputs in process memory or
+`build-one-unit` and `complete-one-unit` preserve the localized v2 baseline. For a semantic
+graph, pass `scope_manifest`, `feature_graph`, and `environment` to `build-graph`. Optional
+`budget_decision` records an explicit user choice. Optional `previous_review_plan` forces a
+revisioned preflight after graph growth. Keep all inputs and outputs in process memory or
 agent messages, never in the reviewed repository.
 
 ## Contract ownership
@@ -22,18 +26,94 @@ agent messages, never in the reviewed repository.
 - **Scope Manifest:** frozen target identity, immutable base/head or local fingerprint,
   typed changed records, exclusions, trusted requirement sources, and proposed validation
   commands.
-- **Feature Graph:** one localized Feature, one executable Review Unit, and exactly one
-  primary owner for every changed record. Context-only records do not alter ownership.
-- **Review Plan:** frozen scope ID, core-policy version, the unit, preflight status, and one
-  assignment for each required role.
+- **Feature Graph:** logical Features, executable Feature and Integration Review Units,
+  material edges, parent-child relationships, and exactly one primary owner for every
+  changed record. Context-only records do not alter ownership.
+- **Review Plan:** frozen scope and graph identities, core-policy version, selected units,
+  paired assignments, resource limits, waves, and preflight status.
 - **Reviewer Task Envelope:** task, scope, unit, role, owned records, immutable core policy,
-  output contract, and budget. The two envelopes have the same evidence and policy but
-  distinct mandates. Never add peer conclusions or progress.
+  graph revision, output contract, and budget. The two envelopes have the same evidence
+  and policy but distinct mandates. Never add peer conclusions or progress. Task IDs bind
+  the scope, graph revision, unit, and role so results from superseded evidence cannot be
+  accepted as current work.
 - **Reviewer Result:** task, scope, unit, role, status, inspected record IDs, candidate
   findings, supporting evidence, proposed checks, and unresolved assumptions.
 - **Coverage Ledger:** every record's primary owner, both role states and attempts, and
   covered status. A record is covered only when both roles have valid completed results;
   the ledger is complete only when every record is covered.
+
+## Semantic graph input
+
+Read the complete resolved change before creating the graph. The helper validates a graph;
+it never discovers features or assigns intent. Do not construct features from directories,
+file counts, syntax alone, or equal-sized chunks.
+
+A Feature declares a stable `feature_id`, name, purpose, and its executable
+`review_unit_ids`. A Feature Review Unit declares its Feature, purpose, owned
+`changed_record_ids`, optional `context_record_ids`, and an
+`estimated_context_tokens` value when capacity is known. The Scope Manifest emits a
+separate record for each text diff hunk, so distinct responsibilities in one file can have
+different primary owners. Non-text and untracked changes remain typed whole-record units.
+Every Scope Manifest record must occur in one unit's owned records and map to that unit in
+`ownership`; context may overlap ownership but never changes it.
+
+Feature-to-unit links are reciprocal: each Feature Review Unit's `feature_id` must name
+the Feature whose `review_unit_ids` contains it. A schema-major-2 localized unit created
+by the prior baseline may omit the newer unit `purpose` field; accept that input while new
+semantic graphs continue to supply a purpose.
+
+Features with children are logical aggregation nodes. They declare reciprocal
+parent-child links and a `subdivision` reason plus a `behavior`, `state_transition`, or
+`contract` boundary. A logical parent has no Review Unit. Its executable children receive
+the reviewer pairs and the main agent synthesizes their results.
+
+## Material integration
+
+Create an Integration Review Unit only when all three semantic conditions hold:
+
+1. A named material contract crosses at least two Feature Review Units.
+2. No participating Feature Review Unit can validate the contract end to end.
+3. A boundary defect could materially affect behavior, security, data integrity,
+   concurrency, compatibility, migration, or deployment.
+
+Record those facts in `integration_criteria`, list every participating feature unit, and
+add a `material_contract` edge from every participant to the Integration Review Unit.
+Incidental imports, shared types, or stable utility calls do not satisfy the conditions.
+Apply the same rule between subdivided children as between top-level features.
+
+## Preflight and budget
+
+The standard profile allows six executable Review Units, twelve required passes, and four
+active reviewer agents after the main agent's slot is reserved. `available_agent_slots`
+includes the main agent. Effective reviewer concurrency is therefore the smaller of four,
+available slots minus one, and pending passes. Lower capacity increases the derived wave
+count without reducing paired coverage.
+
+Provide `usable_context_tokens` and a conservative per-unit estimate when available. No
+unit may be supplied more than 70 percent of usable context; the remaining 30 percent is
+reserved for exploration, reasoning, and output. A context-overflow preflight pauses for
+behavioral subdivision and emits no task envelopes. Optional user and host resource limits
+are reported; where both provide a numeric ceiling, the stricter host-compatible value is
+effective.
+
+A standard-profile overflow pauses before dispatch and offers only:
+
+- a smaller resolved scope and rebuilt graph;
+- an explicitly approved `budget_expansion`, bound to the current `graph_revision`, with
+  adequate unit and pass ceilings; or
+- an explicitly approved `paired_partial_review`, bound to the current `graph_revision`,
+  with risk-prioritized whole-unit IDs.
+
+Partial review emits both roles for every selected unit. Its preflight and Coverage Ledger
+list every unselected unit and owned record, mark those records not selected, and never
+claim complete coverage. A scope-reduction decision applies only after producing the
+smaller Scope Manifest and graph; a label cannot make an oversized graph ready.
+
+Pass the last Review Plan as `previous_review_plan` whenever a discovery changes the graph.
+The next preflight increments its sequence, compares graph fingerprints, records added
+units and the trigger, recalculates ownership and all limits, and emits no envelopes if the
+new graph exceeds budget. A late Integration Review Unit never inherits an earlier budget
+approval silently.
 
 ## Reviewer result
 

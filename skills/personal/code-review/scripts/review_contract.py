@@ -7,6 +7,7 @@ import argparse
 import copy
 import hashlib
 import json
+import math
 import sys
 from typing import Any
 
@@ -30,6 +31,12 @@ CORE_POLICY = {
         "context_checked",
         "material_impact",
     ],
+}
+STANDARD_PROFILE = {
+    "max_executable_units": 6,
+    "max_reviewer_passes": 12,
+    "max_active_reviewers": 4,
+    "context_reserve_ratio": 0.30,
 }
 
 
@@ -71,6 +78,12 @@ def _require_string_array(
     if unique and len(strings) != len(set(strings)):
         raise ContractError(f"{name} values must be unique")
     return strings
+
+
+def _require_positive_integer(value: object, name: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+        raise ContractError(f"{name} must be a positive integer")
+    return value
 
 
 def _validate_anchor(raw_value: object, name: str) -> dict[str, Any]:
@@ -191,25 +204,132 @@ def validate_contract(kind: str, raw_value: object) -> dict[str, Any]:
         if len(record_ids) != len(set(record_ids)):
             raise ContractError("scope_manifest record_id values must be unique")
     elif kind == "feature_graph":
-        if not isinstance(value["review_units"], list):
-            raise ContractError("feature_graph.review_units must be an array")
+        features = _require_array(value["features"], "feature_graph.features")
+        feature_ids: set[str] = set()
+        features_by_id: dict[str, dict[str, Any]] = {}
+        feature_unit_links: list[str] = []
+        for index, raw_feature in enumerate(features):
+            feature = _require_object(raw_feature, f"feature_graph.features[{index}]")
+            _require_fields(
+                feature,
+                f"feature_graph.features[{index}]",
+                {"feature_id", "name", "purpose", "review_unit_ids"},
+            )
+            feature_id = _require_string(
+                feature["feature_id"], f"feature_graph.features[{index}].feature_id"
+            )
+            if feature_id in feature_ids:
+                raise ContractError("feature_graph feature_id values must be unique")
+            feature_ids.add(feature_id)
+            features_by_id[feature_id] = feature
+            _require_string(feature["name"], f"feature_graph.features[{index}].name")
+            _require_string(
+                feature["purpose"], f"feature_graph.features[{index}].purpose"
+            )
+            feature_unit_links.extend(
+                _require_string_array(
+                    feature["review_unit_ids"],
+                    f"feature_graph.features[{index}].review_unit_ids",
+                )
+            )
+            if "child_feature_ids" in feature:
+                _require_string_array(
+                    feature["child_feature_ids"],
+                    f"feature_graph.features[{index}].child_feature_ids",
+                )
+
+        for feature_id, feature in features_by_id.items():
+            child_ids = feature.get("child_feature_ids", [])
+            if child_ids:
+                if feature["review_unit_ids"]:
+                    raise ContractError(
+                        f"Feature {feature_id} is a logical parent and cannot receive a redundant reviewer pair"
+                    )
+                subdivision = _require_object(
+                    feature.get("subdivision"), f"Feature {feature_id}.subdivision"
+                )
+                _require_fields(
+                    subdivision,
+                    f"Feature {feature_id}.subdivision",
+                    {"reason", "boundary"},
+                )
+                _require_string(
+                    subdivision["reason"], f"Feature {feature_id}.subdivision.reason"
+                )
+                if subdivision["boundary"] not in {
+                    "behavior",
+                    "state_transition",
+                    "contract",
+                }:
+                    raise ContractError(
+                        f"Feature {feature_id}.subdivision.boundary is unsupported"
+                    )
+                for child_id in child_ids:
+                    child = features_by_id.get(child_id)
+                    if child is None or child.get("parent_feature_id") != feature_id:
+                        raise ContractError(
+                            f"Feature {feature_id} child relationships must be reciprocal"
+                        )
+            parent_id = feature.get("parent_feature_id")
+            if parent_id is not None:
+                _require_string(parent_id, f"Feature {feature_id}.parent_feature_id")
+                parent = features_by_id.get(parent_id)
+                if parent is None or feature_id not in parent.get("child_feature_ids", []):
+                    raise ContractError(
+                        f"Feature {feature_id} parent relationship must be reciprocal"
+                    )
+
+        for feature_id in feature_ids:
+            seen = {feature_id}
+            current = features_by_id[feature_id]
+            while current.get("parent_feature_id") is not None:
+                parent_id = current["parent_feature_id"]
+                if parent_id in seen:
+                    raise ContractError("Feature Graph parent-child relationships must be acyclic")
+                seen.add(parent_id)
+                current = features_by_id[parent_id]
+
+        review_units = _require_array(
+            value["review_units"], "feature_graph.review_units"
+        )
         unit_records: dict[str, set[str]] = {}
+        units_by_id: dict[str, dict[str, Any]] = {}
+        integration_participants: dict[str, set[str]] = {}
         claimed_records: set[str] = set()
-        for index, raw_unit in enumerate(value["review_units"]):
+        for index, raw_unit in enumerate(review_units):
             unit = _require_object(raw_unit, f"feature_graph.review_units[{index}]")
             _require_fields(
                 unit,
                 f"feature_graph.review_units[{index}]",
-                {"unit_id", "changed_record_ids", "executable"},
-            )
-            if unit["unit_id"] in unit_records:
-                raise ContractError("feature_graph unit_id values must be unique")
-            changed_record_ids = _require_string_array(
-                unit["changed_record_ids"],
-                f"feature_graph.review_units[{index}].changed_record_ids",
+                {
+                    "unit_id",
+                    "kind",
+                    "name",
+                    "changed_record_ids",
+                    "executable",
+                },
             )
             unit_id = _require_string(
                 unit["unit_id"], f"feature_graph.review_units[{index}].unit_id"
+            )
+            if unit_id in unit_records:
+                raise ContractError("feature_graph unit_id values must be unique")
+            if unit["kind"] not in {"feature", "integration"}:
+                raise ContractError(
+                    f"feature_graph.review_units[{index}].kind is unsupported"
+                )
+            if unit["executable"] is not True:
+                raise ContractError(
+                    "Feature Graph Review Units must be executable; logical parents are Feature nodes"
+                )
+            _require_string(unit["name"], f"feature_graph.review_units[{index}].name")
+            if "purpose" in unit:
+                _require_string(
+                    unit["purpose"], f"feature_graph.review_units[{index}].purpose"
+                )
+            changed_record_ids = _require_string_array(
+                unit["changed_record_ids"],
+                f"feature_graph.review_units[{index}].changed_record_ids",
             )
             records = set(changed_record_ids)
             duplicate_claims = claimed_records & records
@@ -219,6 +339,92 @@ def validate_contract(kind: str, raw_value: object) -> dict[str, Any]:
                 )
             claimed_records.update(records)
             unit_records[unit_id] = records
+            units_by_id[unit_id] = unit
+        for unit_id, unit in units_by_id.items():
+            if unit["kind"] == "feature":
+                feature_id = _require_string(
+                    unit.get("feature_id"), f"Review Unit {unit_id}.feature_id"
+                )
+                if feature_id not in feature_ids:
+                    raise ContractError(
+                        f"Review Unit {unit_id} refers to an unknown Feature"
+                    )
+                if unit_id not in features_by_id[feature_id]["review_unit_ids"]:
+                    raise ContractError(
+                        f"Feature and Review Unit links must be bidirectional for {unit_id}"
+                    )
+                if "integration_criteria" in unit:
+                    raise ContractError(
+                        f"Feature Review Unit {unit_id} cannot declare integration criteria"
+                    )
+                continue
+            criteria = _require_object(
+                unit.get("integration_criteria"),
+                f"Integration Review Unit {unit_id}.integration_criteria",
+            )
+            _require_fields(
+                criteria,
+                f"Integration Review Unit {unit_id}.integration_criteria",
+                {
+                    "participating_unit_ids",
+                    "material_contract",
+                    "cannot_be_validated_end_to_end_by_participant",
+                    "material_impact",
+                },
+            )
+            participants = _require_string_array(
+                criteria["participating_unit_ids"],
+                f"Integration Review Unit {unit_id}.participating_unit_ids",
+            )
+            if len(participants) < 2:
+                raise ContractError(
+                    f"Integration Review Unit {unit_id} must cross at least two feature units"
+                )
+            integration_participants[unit_id] = set(participants)
+            if any(
+                participant not in units_by_id
+                or units_by_id[participant]["kind"] != "feature"
+                for participant in participants
+            ):
+                raise ContractError(
+                    f"Integration Review Unit {unit_id} participants must be feature units"
+                )
+            _require_string(
+                criteria["material_contract"],
+                f"Integration Review Unit {unit_id}.material_contract",
+            )
+            if criteria["cannot_be_validated_end_to_end_by_participant"] is not True:
+                raise ContractError(
+                    f"Integration Review Unit {unit_id} must attest that no participant can validate the material contract end to end"
+                )
+            if criteria["material_impact"] not in {
+                "behavior",
+                "security",
+                "data_integrity",
+                "concurrency",
+                "compatibility",
+                "migration",
+                "deployment",
+            }:
+                raise ContractError(
+                    f"Integration Review Unit {unit_id}.material_impact is unsupported"
+                )
+        feature_unit_ids = {
+            unit_id for unit_id, unit in units_by_id.items() if unit["kind"] == "feature"
+        }
+        if len(feature_unit_links) != len(set(feature_unit_links)) or set(
+            feature_unit_links
+        ) != feature_unit_ids:
+            raise ContractError(
+                "Feature nodes must reference every Feature Review Unit exactly once"
+            )
+        for feature_id, feature in features_by_id.items():
+            for unit_id in feature["review_unit_ids"]:
+                unit = units_by_id.get(unit_id)
+                if unit is None or unit.get("feature_id") != feature_id:
+                    raise ContractError(
+                        f"Feature and Review Unit links must be bidirectional for {unit_id}"
+                    )
         ownership = value["ownership"]
         if not isinstance(ownership, dict):
             raise ContractError("feature_graph.ownership must be an object")
@@ -231,6 +437,43 @@ def validate_contract(kind: str, raw_value: object) -> dict[str, Any]:
             if owner not in unit_records or record_id not in unit_records[owner]:
                 raise ContractError(
                     f"feature_graph.ownership has an invalid owner for {record_id}"
+                )
+        edges = _require_array(value["edges"], "feature_graph.edges")
+        edge_keys: set[tuple[str, str, str]] = set()
+        incoming_material_edges: dict[str, set[str]] = {
+            unit_id: set() for unit_id in integration_participants
+        }
+        for index, raw_edge in enumerate(edges):
+            edge = _require_object(raw_edge, f"feature_graph.edges[{index}]")
+            _require_fields(
+                edge,
+                f"feature_graph.edges[{index}]",
+                {"kind", "from_unit_id", "to_unit_id"},
+            )
+            if edge["kind"] != "material_contract":
+                raise ContractError(
+                    f"feature_graph.edges[{index}].kind is unsupported"
+                )
+            from_unit_id = _require_string(
+                edge["from_unit_id"], f"feature_graph.edges[{index}].from_unit_id"
+            )
+            to_unit_id = _require_string(
+                edge["to_unit_id"], f"feature_graph.edges[{index}].to_unit_id"
+            )
+            if from_unit_id not in units_by_id or to_unit_id not in units_by_id:
+                raise ContractError("Feature Graph edges must connect known Review Units")
+            if from_unit_id == to_unit_id:
+                raise ContractError("Feature Graph edges cannot be self-referential")
+            edge_key = (edge["kind"], from_unit_id, to_unit_id)
+            if edge_key in edge_keys:
+                raise ContractError("Feature Graph edges must be unique")
+            edge_keys.add(edge_key)
+            if to_unit_id in incoming_material_edges:
+                incoming_material_edges[to_unit_id].add(from_unit_id)
+        for unit_id, participants in integration_participants.items():
+            if incoming_material_edges[unit_id] != participants:
+                raise ContractError(
+                    f"Integration Review Unit {unit_id} requires a material edge from every participant"
                 )
     elif kind == "review_plan":
         unit_ids = _require_string_array(value["unit_ids"], "review_plan.unit_ids")
@@ -367,7 +610,13 @@ def validate_contract(kind: str, raw_value: object) -> dict[str, Any]:
                 f"coverage_ledger.records[{index}].primary_owner",
             )
             for role in ROLES:
-                if role_status[role] not in {"pending", "completed", "failed", "incomplete"}:
+                if role_status[role] not in {
+                    "pending",
+                    "completed",
+                    "failed",
+                    "incomplete",
+                    "not_selected",
+                }:
                     raise ContractError(
                         f"coverage_ledger.records[{index}].role_status.{role} is unsupported"
                     )
@@ -416,6 +665,420 @@ def _stable_id(prefix: str, *parts: str) -> str:
     return f"{prefix}-{hashlib.sha256(payload).hexdigest()[:16]}"
 
 
+def _graph_revision(feature_graph: dict[str, Any]) -> str:
+    payload = json.dumps(
+        feature_graph, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+    ).encode("utf-8")
+    return f"sha256:{hashlib.sha256(payload).hexdigest()}"
+
+
+def _build_bundle(
+    scope: dict[str, Any],
+    feature_graph: dict[str, Any],
+    environment: dict[str, Any],
+    budget_decision: dict[str, Any] | None = None,
+    previous_plan: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    validate_contract("feature_graph", feature_graph)
+    scope_id = scope["scope_id"]
+    if feature_graph["scope_id"] != scope_id:
+        raise ContractError("Feature Graph does not share the frozen Scope Manifest scope_id")
+    scope_record_ids = {
+        record["record_id"] for record in scope["changed_records"]
+    }
+    if not scope_record_ids:
+        raise ContractError("cannot build a review plan for an empty scope")
+    if set(feature_graph["ownership"]) != scope_record_ids:
+        raise ContractError(
+            "Feature Graph ownership must cover every Scope Manifest changed record"
+        )
+
+    graph_units = [
+        unit for unit in feature_graph["review_units"] if unit.get("executable") is True
+    ]
+    if not graph_units:
+        raise ContractError("cannot build a review plan without an executable Review Unit")
+    graph_revision = _graph_revision(feature_graph)
+    graph_unit_ids = [unit["unit_id"] for unit in graph_units]
+    preflight_sequence = 1
+    preflight_trigger = "initial"
+    graph_changed = False
+    added_unit_ids: list[str] = []
+    previous_graph_revision: str | None = None
+    if previous_plan is not None:
+        validate_contract("review_plan", previous_plan)
+        if previous_plan["scope_id"] != scope_id:
+            raise ContractError(
+                "previous_review_plan does not share the frozen Scope Manifest scope_id"
+            )
+        previous_preflight = _require_object(
+            previous_plan["preflight"], "previous_review_plan.preflight"
+        )
+        previous_graph_revision = _require_string(
+            previous_preflight.get("graph_revision"),
+            "previous_review_plan.preflight.graph_revision",
+        )
+        preflight_sequence = _require_positive_integer(
+            previous_preflight.get("sequence"),
+            "previous_review_plan.preflight.sequence",
+        ) + 1
+        previous_graph_unit_ids = set(
+            _require_string_array(
+                previous_preflight.get("graph_unit_ids"),
+                "previous_review_plan.preflight.graph_unit_ids",
+            )
+        )
+        added_unit_ids = [
+            unit_id for unit_id in graph_unit_ids if unit_id not in previous_graph_unit_ids
+        ]
+        graph_changed = previous_graph_revision != graph_revision
+        added_unit_kinds = {
+            unit["unit_id"]: unit["kind"] for unit in graph_units
+        }
+        preflight_trigger = (
+            "late_integration_unit"
+            if any(added_unit_kinds[unit_id] == "integration" for unit_id in added_unit_ids)
+            else "graph_changed" if graph_changed else "manual_repreflight"
+        )
+    effective_unit_limit = STANDARD_PROFILE["max_executable_units"]
+    effective_pass_limit = STANDARD_PROFILE["max_reviewer_passes"]
+    if budget_decision is not None:
+        decision_kind = budget_decision.get("kind")
+        if decision_kind not in {
+            "scope_reduction",
+            "budget_expansion",
+            "paired_partial_review",
+        }:
+            raise ContractError("budget_decision.kind is unsupported")
+        if budget_decision.get("approved") is not True:
+            raise ContractError("budget_decision must be explicitly approved")
+        if budget_decision.get("graph_revision") != graph_revision:
+            raise ContractError(
+                "budget_decision must be approved for the current graph revision"
+            )
+        if decision_kind == "budget_expansion":
+            effective_unit_limit = _require_positive_integer(
+                budget_decision.get("max_executable_units"),
+                "budget_decision.max_executable_units",
+            )
+            effective_pass_limit = _require_positive_integer(
+                budget_decision.get("max_reviewer_passes"),
+                "budget_decision.max_reviewer_passes",
+            )
+            if (
+                effective_unit_limit < STANDARD_PROFILE["max_executable_units"]
+                or effective_pass_limit < STANDARD_PROFILE["max_reviewer_passes"]
+            ):
+                raise ContractError(
+                    "budget expansion cannot lower the standard profile limits"
+                )
+    units = graph_units
+    partial_review = (
+        budget_decision is not None
+        and budget_decision["kind"] == "paired_partial_review"
+    )
+    if partial_review:
+        if budget_decision.get("selection_basis") != "risk_prioritized":
+            raise ContractError(
+                "paired partial review must declare a risk_prioritized selection_basis"
+            )
+        selected_unit_ids = _require_string_array(
+            budget_decision.get("selected_unit_ids"),
+            "budget_decision.selected_unit_ids",
+        )
+        if not selected_unit_ids:
+            raise ContractError("paired partial review must select at least one whole unit")
+        units_by_id = {unit["unit_id"]: unit for unit in graph_units}
+        if not set(selected_unit_ids) <= set(units_by_id):
+            raise ContractError(
+                "paired partial review selected_unit_ids must name executable Review Units"
+            )
+        units = [units_by_id[unit_id] for unit_id in selected_unit_ids]
+    selected_unit_id_set = {unit["unit_id"] for unit in units}
+    unselected_unit_ids = [
+        unit["unit_id"]
+        for unit in graph_units
+        if unit["unit_id"] not in selected_unit_id_set
+    ]
+    unselected_record_ids = [
+        record["record_id"]
+        for record in scope["changed_records"]
+        if feature_graph["ownership"][record["record_id"]]
+        not in selected_unit_id_set
+    ]
+    unit_ids = [unit["unit_id"] for unit in units]
+    usable_context_tokens: int | None = None
+    if "usable_context_tokens" in environment:
+        usable_context_tokens = _require_positive_integer(
+            environment["usable_context_tokens"], "environment.usable_context_tokens"
+        )
+    unit_context_estimates: dict[str, int] = {}
+    estimates_are_declared = True
+    for unit in units:
+        estimate = unit.get("estimated_context_tokens")
+        if estimate is None:
+            estimates_are_declared = False
+            estimate = (
+                math.floor(
+                    usable_context_tokens
+                    * (1 - STANDARD_PROFILE["context_reserve_ratio"])
+                )
+                if usable_context_tokens is not None
+                else 1
+            )
+        unit_context_estimates[unit["unit_id"]] = _require_positive_integer(
+            estimate, f"Review Unit {unit['unit_id']}.estimated_context_tokens"
+        )
+
+    raw_resource_limits = environment.get("resource_limits", {})
+    resource_limits = _require_object(
+        raw_resource_limits, "environment.resource_limits"
+    )
+    user_limits = _require_object(
+        resource_limits.get("user", {}), "environment.resource_limits.user"
+    )
+    host_limits = _require_object(
+        resource_limits.get("host", {}), "environment.resource_limits.host"
+    )
+    effective_limits = dict(user_limits)
+    for limit_name, host_value in host_limits.items():
+        user_value = effective_limits.get(limit_name)
+        effective_limits[limit_name] = (
+            min(user_value, host_value)
+            if isinstance(user_value, (int, float))
+            and not isinstance(user_value, bool)
+            and isinstance(host_value, (int, float))
+            and not isinstance(host_value, bool)
+            else host_value
+        )
+    assignments: list[dict[str, Any]] = []
+    envelopes: list[dict[str, Any]] = []
+    for unit in units:
+        context_record_ids = _require_string_array(
+            unit.get("context_record_ids", []),
+            f"Review Unit {unit['unit_id']}.context_record_ids",
+        )
+        if not set(context_record_ids) <= scope_record_ids:
+            raise ContractError(
+                f"Review Unit {unit['unit_id']} context must come from the Scope Manifest"
+            )
+        for role in ROLES:
+            task_id = _stable_id(
+                "task", scope_id, graph_revision, unit["unit_id"], role
+            )
+            assignments.append(
+                {
+                    "task_id": task_id,
+                    "unit_id": unit["unit_id"],
+                    "role": role,
+                    "attempt": 1,
+                }
+            )
+            envelopes.append(
+                {
+                    "schema_version": SCHEMA_VERSION,
+                    "task_id": task_id,
+                    "scope_id": scope_id,
+                    "graph_revision": graph_revision,
+                    "unit_id": unit["unit_id"],
+                    "role": role,
+                    "role_mandate": (
+                        "Attack business logic, state transitions, boundaries, and error paths."
+                        if role == "internal_behavior"
+                        else "Attack callers, authorization, data, concurrency, compatibility, and deployment contracts."
+                    ),
+                    "changed_record_ids": list(unit["changed_record_ids"]),
+                    "context_record_ids": context_record_ids,
+                    "core_policy": CORE_POLICY,
+                    "output_contract": "reviewer_result@2",
+                    "budget": {
+                        "estimated_context_tokens": unit_context_estimates[
+                            unit["unit_id"]
+                        ],
+                        "resource_limits": effective_limits,
+                    },
+                }
+            )
+
+    available_slots = environment.get(
+        "available_agent_slots", STANDARD_PROFILE["max_active_reviewers"] + 1
+    )
+    available_slots = _require_positive_integer(
+        available_slots, "environment.available_agent_slots"
+    )
+    reviewer_passes = len(assignments)
+    effective_concurrency = min(
+        STANDARD_PROFILE["max_active_reviewers"],
+        max(available_slots - 1, 0),
+        reviewer_passes,
+    )
+    waves = (
+        math.ceil(reviewer_passes / effective_concurrency)
+        if effective_concurrency
+        else None
+    )
+    context_budget = {
+        "usable_tokens": usable_context_tokens,
+        "reserved_tokens": (
+            math.ceil(
+                usable_context_tokens * STANDARD_PROFILE["context_reserve_ratio"]
+            )
+            if usable_context_tokens is not None
+            else None
+        ),
+        "max_supplied_tokens_per_unit": (
+            math.floor(
+                usable_context_tokens
+                * (1 - STANDARD_PROFILE["context_reserve_ratio"])
+            )
+            if usable_context_tokens is not None
+            else None
+        ),
+        "largest_unit_estimate_tokens": max(unit_context_estimates.values()),
+        "estimate_kind": "declared" if estimates_are_declared else "conservative",
+    }
+    blocking_reasons: list[str] = []
+    if len(units) > effective_unit_limit:
+        blocking_reasons.append("standard_unit_limit_exceeded")
+    if reviewer_passes > effective_pass_limit:
+        blocking_reasons.append("standard_reviewer_pass_limit_exceeded")
+    max_supplied_tokens = context_budget["max_supplied_tokens_per_unit"]
+    if isinstance(max_supplied_tokens, int):
+        blocking_reasons.extend(
+            f"unit_context_overflow:{unit_id}"
+            for unit_id, estimate in unit_context_estimates.items()
+            if estimate > max_supplied_tokens
+        )
+    if not effective_concurrency:
+        blocking_reasons.append("no_reviewer_capacity_after_main_agent_reservation")
+    dispatch_ready = not blocking_reasons
+    review_plan = {
+        "schema_version": SCHEMA_VERSION,
+        "scope_id": scope_id,
+        "policy_version": CORE_POLICY["version"],
+        "unit_ids": unit_ids,
+        "assignments": assignments,
+        "preflight": {
+            "status": (
+                "ready_partial"
+                if dispatch_ready and partial_review
+                else "ready" if dispatch_ready else "paused"
+            ),
+            "executable_units": len(graph_units),
+            "graph_executable_units": len(graph_units),
+            "selected_executable_units": len(units),
+            "required_reviewer_passes": reviewer_passes,
+            "effective_concurrency": effective_concurrency,
+            "waves": waves,
+            "context_budget": context_budget,
+            "resource_limits": {
+                "user": user_limits,
+                "host": host_limits,
+                "effective": effective_limits,
+            },
+            "blocking_reasons": blocking_reasons,
+            "standard_profile": STANDARD_PROFILE,
+            "effective_unit_limit": effective_unit_limit,
+            "effective_reviewer_pass_limit": effective_pass_limit,
+            "unselected_unit_ids": unselected_unit_ids,
+            "unselected_record_ids": unselected_record_ids,
+            "sequence": preflight_sequence,
+            "trigger": preflight_trigger,
+            "graph_revision": graph_revision,
+            "graph_changed": graph_changed,
+            "graph_unit_ids": graph_unit_ids,
+            "added_unit_ids": added_unit_ids,
+        },
+    }
+    if previous_graph_revision is not None:
+        review_plan["preflight"]["previous_graph_revision"] = previous_graph_revision
+    if budget_decision is not None:
+        review_plan["preflight"]["budget_decision"] = budget_decision
+    if any(reason.startswith("standard_") for reason in blocking_reasons):
+        review_plan["preflight"]["overflow_choices"] = [
+            "scope_reduction",
+            "budget_expansion",
+            "paired_partial_review",
+        ]
+    if any(reason.startswith("unit_context_overflow:") for reason in blocking_reasons):
+        review_plan["preflight"]["required_action"] = (
+            "subdivide_by_behavior_state_transition_or_contract"
+        )
+    if not dispatch_ready:
+        envelopes = []
+    coverage_ledger = {
+        "schema_version": SCHEMA_VERSION,
+        "scope_id": scope_id,
+        "records": [
+            {
+                "record_id": record["record_id"],
+                "primary_owner": feature_graph["ownership"][record["record_id"]],
+                "role_status": {
+                    role: (
+                        "pending"
+                        if feature_graph["ownership"][record["record_id"]]
+                        in selected_unit_id_set
+                        else "not_selected"
+                    )
+                    for role in ROLES
+                },
+                "attempts": {role: 0 for role in ROLES},
+                "covered": False,
+                "selected_for_review": (
+                    feature_graph["ownership"][record["record_id"]]
+                    in selected_unit_id_set
+                ),
+                "uncovered_reason": (
+                    None
+                    if feature_graph["ownership"][record["record_id"]]
+                    in selected_unit_id_set
+                    else "not_selected_by_partial_review"
+                ),
+            }
+            for record in scope["changed_records"]
+        ],
+        "uncovered_record_ids": unselected_record_ids,
+        "complete": False,
+    }
+
+    validate_contract("review_plan", review_plan)
+    for envelope in envelopes:
+        validate_contract("reviewer_task_envelope", envelope)
+    validate_contract("coverage_ledger", coverage_ledger)
+    return {
+        "scope_manifest": scope,
+        "feature_graph": feature_graph,
+        "review_plan": review_plan,
+        "reviewer_task_envelopes": envelopes,
+        "coverage_ledger": coverage_ledger,
+    }
+
+
+def build_graph(raw_value: object) -> dict[str, Any]:
+    value = _require_object(raw_value, "graph build input")
+    _require_fields(
+        value,
+        "graph build input",
+        {"scope_manifest", "feature_graph", "environment"},
+    )
+    scope = validate_contract("scope_manifest", value["scope_manifest"])
+    environment = _require_object(value["environment"], "environment")
+    feature_graph = _require_object(value["feature_graph"], "feature_graph")
+    budget_decision = (
+        _require_object(value["budget_decision"], "budget_decision")
+        if "budget_decision" in value
+        else None
+    )
+    previous_plan = (
+        _require_object(value["previous_review_plan"], "previous_review_plan")
+        if "previous_review_plan" in value
+        else None
+    )
+    return _build_bundle(
+        scope, feature_graph, environment, budget_decision, previous_plan
+    )
+
+
 def build_one_unit(
     scope_value: object, *, unit_id: str, feature_name: str
 ) -> dict[str, Any]:
@@ -443,6 +1106,7 @@ def build_one_unit(
                 "feature_id": feature_id,
                 "kind": "feature",
                 "name": feature_name,
+                "purpose": "Review localized behavior represented by the resolved change",
                 "changed_record_ids": record_ids,
                 "context_record_ids": [],
                 "executable": True,
@@ -452,73 +1116,7 @@ def build_one_unit(
         "edges": [],
     }
 
-    assignments = []
-    envelopes = []
-    for role in ROLES:
-        task_id = _stable_id("task", scope_id, unit_id, role)
-        assignments.append(
-            {"task_id": task_id, "unit_id": unit_id, "role": role, "attempt": 1}
-        )
-        envelopes.append(
-            {
-                "schema_version": SCHEMA_VERSION,
-                "task_id": task_id,
-                "scope_id": scope_id,
-                "unit_id": unit_id,
-                "role": role,
-                "role_mandate": (
-                    "Attack business logic, state transitions, boundaries, and error paths."
-                    if role == "internal_behavior"
-                    else "Attack callers, authorization, data, concurrency, compatibility, and deployment contracts."
-                ),
-                "changed_record_ids": record_ids,
-                "context_record_ids": [],
-                "core_policy": CORE_POLICY,
-                "output_contract": "reviewer_result@2",
-                "budget": {},
-            }
-        )
-
-    review_plan = {
-        "schema_version": SCHEMA_VERSION,
-        "scope_id": scope_id,
-        "policy_version": CORE_POLICY["version"],
-        "unit_ids": [unit_id],
-        "assignments": assignments,
-        "preflight": {
-            "status": "ready",
-            "executable_units": 1,
-            "required_reviewer_passes": 2,
-        },
-    }
-    coverage_ledger = {
-        "schema_version": SCHEMA_VERSION,
-        "scope_id": scope_id,
-        "records": [
-            {
-                "record_id": record_id,
-                "primary_owner": unit_id,
-                "role_status": {role: "pending" for role in ROLES},
-                "attempts": {role: 0 for role in ROLES},
-                "covered": False,
-            }
-            for record_id in record_ids
-        ],
-        "complete": False,
-    }
-
-    validate_contract("feature_graph", feature_graph)
-    validate_contract("review_plan", review_plan)
-    for envelope in envelopes:
-        validate_contract("reviewer_task_envelope", envelope)
-    validate_contract("coverage_ledger", coverage_ledger)
-    return {
-        "scope_manifest": scope,
-        "feature_graph": feature_graph,
-        "review_plan": review_plan,
-        "reviewer_task_envelopes": envelopes,
-        "coverage_ledger": coverage_ledger,
-    }
+    return _build_bundle(scope, feature_graph, {})
 
 
 def complete_one_unit(raw_value: object) -> dict[str, Any]:
@@ -676,6 +1274,10 @@ def _parser() -> argparse.ArgumentParser:
     build.add_argument("--unit-id", required=True)
     build.add_argument("--feature-name", required=True)
     subparsers.add_parser(
+        "build-graph",
+        help="validate a semantic Feature Graph and build its paired review plan",
+    )
+    subparsers.add_parser(
         "complete-one-unit",
         help="accept exactly one successful isolated result for each planned role",
     )
@@ -692,6 +1294,8 @@ def main() -> int:
             output = build_one_unit(
                 value, unit_id=args.unit_id, feature_name=args.feature_name
             )
+        elif args.command == "build-graph":
+            output = build_graph(value)
         else:
             output = complete_one_unit(value)
     except ContractError as exc:

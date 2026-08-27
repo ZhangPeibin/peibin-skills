@@ -44,7 +44,15 @@ exclusions without separate authorization and a safer inspection plan.
 Tracked symlinks are represented from Git link blobs or `readlink` data after their parent
 path is proven contained. Their targets are never opened. Binary, file-mode, rename-only,
 symlink, and gitlink records receive typed change anchors; text additions use new-side line
-anchors and deletions use old-side anchors.
+anchors and deletions use old-side anchors. Each tracked text diff hunk is a separate
+changed record with an explicit old/new region, allowing distinct functional ownership
+within one file. Untracked files and non-text changes remain whole typed records.
+
+Hunk identity comes from a canonical patch: color and the indent heuristic are disabled,
+inter-hunk context is zero, the Myers algorithm is fixed, and rename detection is enabled.
+Edited renames are inspected with both old and new literal paths. Parse patch structure by
+LF-delimited bytes, validate each hunk's old/new line counts, and decode only textual fields;
+ambient Git formatting or diff configuration must not alter record boundaries or anchors.
 
 All Git inspection disables external diff programs, text conversion, lazy object fetching,
 terminal credential prompts, and optional index locks. A missing local object is a coverage

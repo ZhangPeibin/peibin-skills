@@ -135,18 +135,37 @@ def _parse_raw(raw: bytes) -> list[dict[str, str | None]]:
     return records
 
 
-def _diff_bytes(repo: Path, args: list[str], path: str, *, patch: bool) -> bytes:
-    option = "--unified=0" if patch else "--numstat"
+def _diff_bytes(
+    repo: Path,
+    args: list[str],
+    paths: str | list[str],
+    *,
+    patch: bool,
+) -> bytes:
+    pathspecs = [paths] if isinstance(paths, str) else list(dict.fromkeys(paths))
+    options = (
+        [
+            "--patch",
+            "--no-color",
+            "--unified=0",
+            "--inter-hunk-context=0",
+            "--diff-algorithm=myers",
+            "--no-indent-heuristic",
+            "--find-renames",
+        ]
+        if patch
+        else ["--numstat", "--find-renames"]
+    )
     return _git(
         repo,
         "--literal-pathspecs",
         "diff",
         "--no-ext-diff",
         "--no-textconv",
-        option,
+        *options,
         *args,
         "--",
-        path,
+        *pathspecs,
     )
 
 
@@ -160,22 +179,110 @@ def _has_content_change(repo: Path, args: list[str], path: str) -> bool:
     return bool(re.search(br"^@@ ", patch, re.MULTILINE))
 
 
-def _line_anchor(repo: Path, args: list[str], path: str) -> dict[str, Any]:
-    patch = _diff_bytes(repo, args, path, patch=True).decode("utf-8", "replace")
-    match = re.search(r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@", patch, re.MULTILINE)
-    if match is None:
-        return {"kind": "change", "path": path, "change_type": "text"}
-    old_line, new_line = int(match.group(1)), int(match.group(2))
-    hunk_lines: list[str] = []
-    for line in patch[match.end() :].splitlines():
-        if line.startswith("@@ "):
-            break
-        hunk_lines.append(line)
-    if any(line.startswith("+") and not line.startswith("+++") for line in hunk_lines):
-        return {"kind": "line", "side": "new", "path": path, "line": new_line}
-    if any(line.startswith("-") and not line.startswith("---") for line in hunk_lines):
-        return {"kind": "line", "side": "old", "path": path, "line": old_line}
-    return {"kind": "change", "path": path, "change_type": "text"}
+def _line_anchor(
+    repo: Path,
+    args: list[str],
+    old_path: str | None,
+    new_path: str | None,
+) -> dict[str, Any]:
+    hunks = _diff_hunks(repo, args, old_path, new_path)
+    if hunks:
+        return hunks[0]["anchor"]
+    return {
+        "kind": "change",
+        "path": new_path or old_path,
+        "change_type": "text",
+    }
+
+
+def _diff_hunks(
+    repo: Path,
+    args: list[str],
+    old_path: str | None,
+    new_path: str | None,
+) -> list[dict[str, Any]]:
+    paths = [path for path in (old_path, new_path) if path is not None]
+    patch = _diff_bytes(repo, args, paths, patch=True)
+    lines = patch.split(b"\n")
+    hunks: list[dict[str, Any]] = []
+    index = 0
+    header_pattern = re.compile(
+        br"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?: .*)?$"
+    )
+    while index < len(lines):
+        match = header_pattern.match(lines[index])
+        if match is None:
+            index += 1
+            continue
+        old_start = int(match.group(1))
+        old_count = int(match.group(2) or b"1")
+        new_start = int(match.group(3))
+        new_count = int(match.group(4) or b"1")
+        old_cursor = old_start
+        new_cursor = new_start
+        consumed_old = 0
+        consumed_new = 0
+        first_old_line: int | None = None
+        first_new_line: int | None = None
+        index += 1
+        while index < len(lines) and not lines[index].startswith(b"@@ "):
+            line = lines[index]
+            if line.startswith(b"+"):
+                if first_new_line is None:
+                    first_new_line = new_cursor
+                new_cursor += 1
+                consumed_new += 1
+            elif line.startswith(b"-"):
+                if first_old_line is None:
+                    first_old_line = old_cursor
+                old_cursor += 1
+                consumed_old += 1
+            elif line.startswith(b" "):
+                old_cursor += 1
+                new_cursor += 1
+                consumed_old += 1
+                consumed_new += 1
+            elif line == b"" or line.startswith(b"\\ No newline at end of file"):
+                pass
+            else:
+                raise ScopeError("unexpected git patch hunk body")
+            index += 1
+        if consumed_old != old_count or consumed_new != new_count:
+            raise ScopeError("git patch hunk line counts do not match its header")
+        anchor = (
+            {
+                "kind": "line",
+                "side": "new",
+                "path": new_path,
+                "line": first_new_line,
+            }
+            if first_new_line is not None
+            else {
+                "kind": "line",
+                "side": "old",
+                "path": old_path,
+                "line": first_old_line,
+            }
+            if first_old_line is not None
+            else {
+                "kind": "change",
+                "path": new_path or old_path,
+                "change_type": "text",
+            }
+        )
+        hunks.append(
+            {
+                "region": {
+                    "kind": "diff_hunk",
+                    "old_start": old_start,
+                    "old_count": old_count,
+                    "new_start": new_start,
+                    "new_count": new_count,
+                },
+                "anchor": anchor,
+            }
+        )
+    return hunks
 
 
 def _open_contained_parent(repo: Path, relative_path: str) -> tuple[int, str]:
@@ -311,7 +418,7 @@ def _typed_record(
         change_type = "text"
 
     if change_type in {"text", "deletion"}:
-        anchor = _line_anchor(repo, diff_args, path)
+        anchor = _line_anchor(repo, diff_args, old_path, new_path)
         if change_type == "deletion" and anchor.get("kind") == "line":
             anchor["side"] = "old"
             anchor["path"] = old_path
@@ -365,6 +472,43 @@ def _typed_record(
     return record
 
 
+def _split_text_record_by_hunk(
+    repo: Path,
+    record: dict[str, Any],
+    *,
+    diff_args: list[str],
+) -> list[dict[str, Any]]:
+    if record["change_type"] not in {"text", "deletion"}:
+        return [record]
+    hunks = _diff_hunks(
+        repo,
+        diff_args,
+        record["old_path"],
+        record["new_path"],
+    )
+    if not hunks:
+        return [record]
+    split_records: list[dict[str, Any]] = []
+    for hunk in hunks:
+        anchor = hunk["anchor"]
+        if record["change_type"] == "deletion" and anchor["kind"] == "line":
+            anchor = {**anchor, "side": "old", "path": record["old_path"]}
+        identity = json.dumps(
+            {"record_id": record["record_id"], **hunk},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        split_records.append(
+            {
+                **record,
+                "record_id": "record-" + hashlib.sha256(identity).hexdigest()[:20],
+                "anchor": anchor,
+                "region": hunk["region"],
+            }
+        )
+    return split_records
+
+
 def _tracked_records(repo: Path, source: str, diff_args: list[str]) -> list[dict[str, Any]]:
     raw = _git(
         repo,
@@ -377,10 +521,13 @@ def _tracked_records(repo: Path, source: str, diff_args: list[str]) -> list[dict
         "--find-renames",
         *diff_args,
     )
-    return [
-        _typed_record(repo, value, source=source, diff_args=diff_args)
-        for value in _parse_raw(raw)
-    ]
+    records: list[dict[str, Any]] = []
+    for value in _parse_raw(raw):
+        record = _typed_record(repo, value, source=source, diff_args=diff_args)
+        records.extend(
+            _split_text_record_by_hunk(repo, record, diff_args=diff_args)
+        )
+    return records
 
 
 def _untracked_records(repo: Path, max_bytes: int) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
