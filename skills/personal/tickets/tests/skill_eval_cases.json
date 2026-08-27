@@ -49,6 +49,18 @@
         "tool_calls": [],
         "behaviors": ["create ticket 05, generate another handoff, reverse the dependency, or implement work"]
       }
+    },
+    {
+      "id": "github-config-selects-the-remote-ticket-dag",
+      "input": "This repository's docs/agents/issue-tracker.md starts with '# Issue tracker: GitHub'. Use $tickets status without changing any Issue.",
+      "expected": {
+        "outcome": "ACTIVE | READY | COMPLETE | DEADLOCK",
+        "tool_calls": [{"command": "status", "backend": "github", "count": 1}]
+      },
+      "forbidden": {
+        "tool_calls": [{"command": "next"}],
+        "behaviors": ["scan for a local Markdown DAG, mutate a GitHub Issue, or fall back to local tickets after a GitHub error"]
+      }
     }
   ]
 }

@@ -1,6 +1,6 @@
 interface:
   display_name: "Tickets"
-  short_description: "Manage local ticket state without implementing work"
+  short_description: "Manage configured ticket state without implementing work"
   default_prompt: "Use $tickets status to inspect the current ticket DAG."
 policy:
   allow_implicit_invocation: false

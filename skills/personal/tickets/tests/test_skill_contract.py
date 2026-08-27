@@ -14,9 +14,11 @@ OPENAI_PATH = SKILL_ROOT / "agents" / "openai.yaml"
 EVAL_CASES_PATH = Path(__file__).with_name("skill_eval_cases.json")
 RECOVERY_CONTRACT_PATH = SKILL_ROOT / "references" / "recovery-contract.md"
 OUTPUT_CONTRACT_PATH = SKILL_ROOT / "references" / "output-contract.md"
+GITHUB_TRACKER_PATH = SKILL_ROOT / "references" / "github-tracker.md"
 CONTRACT_PATHS = (
     OUTPUT_CONTRACT_PATH,
     RECOVERY_CONTRACT_PATH,
+    GITHUB_TRACKER_PATH,
 )
 SCRIPT = SKILL_ROOT / "scripts" / "ticketctl.py"
 
@@ -77,12 +79,28 @@ class SkillContractTest(unittest.TestCase):
         self.assertEqual(
             required_by_command,
             {
-                "status": {"feature_root"},
-                "next": {"feature_root"},
-                "pause": {"feature_root", "reason"},
-                "done": {"feature_root"},
+                "status": set(),
+                "next": set(),
+                "pause": {"reason"},
+                "done": set(),
             },
         )
+        for command in commands.values():
+            options = {
+                option
+                for action in command._actions
+                for option in action.option_strings
+            }
+            self.assertTrue(
+                {
+                    "--feature-root",
+                    "--tracker",
+                    "--repo-root",
+                    "--repo",
+                    "--feature",
+                }
+                <= options
+            )
         pause_options = {
             option
             for action in commands["pause"]._actions
@@ -98,12 +116,14 @@ class SkillContractTest(unittest.TestCase):
             {
                 "references/output-contract.md",
                 "references/recovery-contract.md",
+                "references/github-tracker.md",
             },
         )
         contract = OUTPUT_CONTRACT_PATH.read_text(encoding="utf-8")
         for field in ticketctl._response("status", "READY"):
             self.assertIn(f'"{field}"', contract)
         self.assertEqual(ticketctl.OUTPUT_SCHEMA_VERSION, 2)
+        self.assertEqual(ticketctl.GITHUB_OUTPUT_SCHEMA_VERSION, 3)
 
     def test_storage_identifiers_remain_backward_compatible(self) -> None:
         self.assertEqual(
@@ -125,13 +145,16 @@ class SkillContractTest(unittest.TestCase):
         cases = payload["cases"]
         commands = set(_command_parsers())
         observed: set[str] = set()
+        observed_backends: set[str] = set()
         for case in cases:
             self.assertTrue(case["expected"]["outcome"])
             for call in case["expected"]["tool_calls"]:
                 self.assertIn(call["command"], commands)
                 observed.add(call["command"])
+                observed_backends.add(call.get("backend", "local"))
             self.assertTrue(case["forbidden"]["behaviors"])
         self.assertTrue({"status", "next", "done", "pause"} <= observed)
+        self.assertEqual(observed_backends, {"local", "github"})
 
 
 if __name__ == "__main__":

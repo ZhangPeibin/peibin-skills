@@ -1,16 +1,19 @@
 ---
 name: tickets
-description: Manage state in a local to-tickets Markdown DAG without implementing or verifying product work.
+description: Manage state in a configured local Markdown or GitHub Issue ticket DAG without implementing or verifying product work.
 disable-model-invocation: true
 ---
 
 # Tickets
 
-Manage tickets under `.scratch/<feature>/issues/`. Ticket files are authoritative; `implementation-roadmap.md` is derived.
+Manage one Ticket DAG through its derived `implementation-roadmap.md`. The configured Ticket source is authoritative; the roadmap never is.
 
-Use `python3 <skill-root>/scripts/ticketctl.py <command> --feature-root <path> [--ticket <ticket>]`; map public `[ticket]` to `--ticket`. Require an explicit feature root, or discover it only when exactly one `.scratch/*/issues/` exists. If invocation omits a mode, use `status`; reject unknown modes.
+Resolve the tracker before invoking the controller. An explicit `.scratch/<feature>` target selects local Markdown. Otherwise read `docs/agents/issue-tracker.md`: select GitHub only for `# Issue tracker: GitHub`; with no configured tracker, select local only when exactly one `.scratch/*/issues/` exists. Reject ambiguous or unsupported trackers.
 
-Consume only the versioned fields in [references/output-contract.md](references/output-contract.md).
+- Local: `python3 <skill-root>/scripts/ticketctl.py <command> --feature-root <path> [--ticket <ticket>]`.
+- GitHub: `python3 <skill-root>/scripts/ticketctl.py <command> --tracker github --repo-root <repo> [--repo <owner/name>] [--feature <parent>] [--ticket <ticket>]`; read [github-tracker.md](references/github-tracker.md).
+
+Map public `[ticket]` to `--ticket`. If invocation omits a mode, use `status`; reject unknown modes. Consume only [the versioned output contract](references/output-contract.md).
 
 ## Modes
 
@@ -25,6 +28,6 @@ Read [references/recovery-contract.md](references/recovery-contract.md) for paus
 
 ## State Rules
 
-Maintain one active ticket. Only explicit `done` creates new completion state. Preserve legacy completion and confirmation history without treating it as current verification. `Blocked by` and paused-ticket remediation edges must remain acyclic; never make remediation depend on its paused parent.
+Maintain one active ticket. Only explicit `done` creates new completion state. Preserve legacy completion and confirmation history without treating it as current verification. Published blockers and paused-ticket remediation edges must remain acyclic; never make remediation depend on its paused parent.
 
 Limit this Skill to controller-managed ticket and roadmap state. Never invoke `$implement` even when output recommends it. Do not implement, verify, create tickets or handoffs, commit, push, deploy, or open pull requests.

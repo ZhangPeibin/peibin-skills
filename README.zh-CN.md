@@ -33,7 +33,7 @@ $to-spec -> $to-tickets
            $to-commits -> $to-pr
 ```
 
-`$tickets` 只管理本地 ticket DAG 的状态，不实现或验证产品代码；`$implement` 负责实现、测试、代码审查和实现提交。
+`$tickets` 管理由仓库配置选择的本地 Markdown 或 GitHub Issue ticket DAG，不实现或验证产品代码；`$implement` 负责实现、测试、代码审查和实现提交。
 
 [![Skill 工作流](./docs/diagrams/skill-workflow.png)](./docs/diagrams/skill-workflow.excalidraw)
 
@@ -49,7 +49,7 @@ $to-spec -> $to-tickets
 | [to-feature-doc](./skills/personal/to-feature-doc/) | 根据真实实现为现有功能生成工程文档 | 模块需要设计说明或新人指南 |
 | [requirements-analysis](./skills/personal/requirements-analysis/) | 逐项澄清 Feature，并持久保存讨论过程 | 需求仍然模糊 |
 | [setup-engineering-workflow](./skills/personal/setup-engineering-workflow/) | 配置 issue tracker、标签、领域文档和 pre-PRD 文档 | 仓库准备采用这套工作流 |
-| [tickets](./skills/personal/tickets/) | 管理本地 `to-tickets` DAG 的状态 | 需要查看、领取、完成或暂停 Ticket |
+| [tickets](./skills/personal/tickets/) | 管理本地 Markdown 或 GitHub Issue ticket DAG | 需要查看、领取、完成或暂停 Ticket |
 | [handoff](./skills/personal/handoff/) | 使用 `$handoff` 生成可持久恢复的版本化 Markdown 交接物 | 工作需要在另一个会话继续 |
 | [code-review](./skills/personal/code-review/) | 审查指定改动并报告有明确证据的回归 | 本地改动、commit、分支或 PR 需要审查 |
 | [init-flutter-app](./skills/personal/flutter/init-flutter-app/) | 从 `flutter-template` 初始化 Flutter 应用 | 创建新的 Flutter 项目 |

@@ -18,11 +18,18 @@ from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Any
 
+SCRIPT_ROOT = Path(__file__).resolve().parent
+if str(SCRIPT_ROOT) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_ROOT))
+
+from github_ticket_store import GitHubStoreError, GitHubTicketStore
+
 READY = "ready-for-agent"
 IN_PROGRESS = "in-progress"
 PAUSED = "paused"
 DONE = "done"
 OUTPUT_SCHEMA_VERSION = 2
+GITHUB_OUTPUT_SCHEMA_VERSION = 3
 CONFIRMATION_SUMMARY_MAX_CHARS = 1_000
 CONFIRMATION_EVIDENCE_MAX_CHARS = 4_000
 CONFIRMATION_CHECK_NAME_MAX_CHARS = 200
@@ -83,6 +90,10 @@ class Ticket:
     dependency_tokens: list[str]
     dependencies: list[str]
     state: dict[str, Any]
+    url: str | None = None
+    claimed_by_other: tuple[str, ...] = ()
+    claimed_by_current: bool = True
+    can_resume: bool = True
 
 
 @dataclasses.dataclass
@@ -91,6 +102,11 @@ class Tracker:
     repo_root: Path
     tickets: dict[str, Ticket]
     roadmap_path: Path
+    backend: str = "local"
+    repository: str | None = None
+    feature_id: str | None = None
+    store: Any | None = None
+    schema_version: int = OUTPUT_SCHEMA_VERSION
 
 
 @dataclasses.dataclass(frozen=True)
@@ -336,7 +352,7 @@ def _preamble_acceptance(text: str) -> list[str]:
 
 
 def _dependency_tokens(value: str) -> list[str]:
-    if re.match(r"^\s*(?:none|n/a|no\b)", value, re.IGNORECASE):
+    if re.match(r"^\s*(?:[-*+]\s*)?(?:none|n/a|no\b)", value, re.IGNORECASE):
         return []
 
     quoted = re.findall(r"`\s*#?(\d+(?:\s*-\s*\d+)?)\s*(?:PASS)?\s*`", value)
@@ -663,6 +679,156 @@ def load_tracker(feature_root: Path) -> Tracker:
     )
 
 
+def load_github_tracker(
+    repo_root: Path,
+    *,
+    repository: str | None = None,
+    feature_id: str | None = None,
+) -> Tracker:
+    root = repo_root.expanduser().resolve()
+    store = GitHubTicketStore(
+        root,
+        repository=repository,
+        feature_number=feature_id,
+    )
+    try:
+        feature = store.load()
+    except GitHubStoreError as exc:
+        raise TicketCtlError(
+            str(exc),
+            kind="POST_COMMIT_ERROR" if exc.changed else exc.kind,
+            details=exc.details,
+            changed=exc.changed,
+        ) from exc
+
+    store.repository = feature.repository
+    store.feature_number = str(feature.feature_number)
+    feature_root = root / ".scratch" / f"github-{feature.feature_number}"
+    errors: list[str] = []
+    tickets: dict[str, Ticket] = {}
+    for issue in feature.issues:
+        label = f"GitHub issue #{issue.number}"
+        sections, duplicates = _sections(issue.body)
+        if duplicates:
+            errors.append(f"{label}: duplicate sections: {', '.join(duplicates)}")
+        what_to_build = (
+            sections.get("what to build")
+            or sections.get("delivery")
+            or issue.title
+        ).strip()
+        acceptance_body = sections.get("acceptance criteria") or sections.get(
+            "core acceptance"
+        )
+        acceptance = _requirements(acceptance_body or "")
+        if not acceptance:
+            errors.append(f"{label}: no acceptance criteria found")
+
+        blocked_body = sections.get("blocked by") or "None"
+        try:
+            dependency_tokens = (
+                [str(number) for number in issue.blockers]
+                if issue.blockers
+                else _dependency_tokens(blocked_body)
+            )
+        except ValueError as exc:
+            errors.append(f"{label}: Blocked by: {exc}")
+            dependency_tokens = []
+
+        try:
+            state = _parse_state(issue.state_text or "")
+        except (TypeError, ValueError) as exc:
+            errors.append(f"{label}: {exc}")
+            state = _default_state()
+        other_assignees = tuple(
+            assignee
+            for assignee in issue.assignees
+            if assignee != feature.current_login
+        )
+        claimed_by_current = feature.current_login in issue.assignees
+        can_resume = True
+        if issue.state == "CLOSED":
+            status = DONE
+        elif issue.assignees:
+            status = IN_PROGRESS
+        elif state.get("pause_reason") is not None:
+            status = PAUSED
+        elif "ready-for-agent" in issue.labels:
+            status = READY
+        else:
+            status = PAUSED
+            can_resume = False
+            state = dict(state)
+            state["pause_reason"] = "GitHub issue is not labeled ready-for-agent"
+
+        ticket_id = str(issue.number)
+        tickets[ticket_id] = Ticket(
+            ticket_id=ticket_id,
+            path=feature_root / "issues" / f"{ticket_id}-github.md",
+            text=issue.body,
+            title=issue.title,
+            status=status,
+            what_to_build=what_to_build,
+            acceptance=acceptance,
+            dependency_tokens=dependency_tokens,
+            dependencies=[],
+            state=state,
+            url=issue.url,
+            claimed_by_other=other_assignees,
+            claimed_by_current=claimed_by_current,
+            can_resume=can_resume,
+        )
+
+    aliases = {str(int(ticket_id)): ticket_id for ticket_id in tickets}
+    for ticket in tickets.values():
+        dependencies: list[str] = []
+        for token in ticket.dependency_tokens:
+            resolved = _resolve_numeric_id(token, aliases)
+            if resolved is None:
+                errors.append(
+                    f"GitHub issue #{ticket.ticket_id}: missing dependency {token!r}"
+                )
+            elif resolved == ticket.ticket_id:
+                errors.append(
+                    f"GitHub issue #{ticket.ticket_id}: ticket cannot depend on itself"
+                )
+            elif resolved not in dependencies:
+                dependencies.append(resolved)
+        ticket.dependencies = dependencies
+
+        waits: list[str] = []
+        for token in ticket.state["waits_for"]:
+            resolved = _resolve_numeric_id(token, aliases)
+            if resolved is None:
+                errors.append(
+                    f"GitHub issue #{ticket.ticket_id}: missing waits_for ticket {token!r}"
+                )
+            elif resolved == ticket.ticket_id:
+                errors.append(
+                    f"GitHub issue #{ticket.ticket_id}: ticket cannot wait for itself"
+                )
+            elif resolved not in waits:
+                waits.append(resolved)
+        ticket.state["waits_for"] = waits
+
+    cycle = _find_cycle(tickets)
+    if cycle:
+        errors.append("dependency cycle: " + " -> ".join(cycle))
+    if errors:
+        raise ValidationFailure(errors)
+
+    return Tracker(
+        feature_root=feature_root,
+        repo_root=root,
+        tickets=tickets,
+        roadmap_path=feature_root / "implementation-roadmap.md",
+        backend="github",
+        repository=feature.repository,
+        feature_id=str(feature.feature_number),
+        store=store,
+        schema_version=GITHUB_OUTPUT_SCHEMA_VERSION,
+    )
+
+
 def _ticket_dependencies(ticket: Ticket) -> list[str]:
     return list(dict.fromkeys(ticket.dependencies + ticket.state["waits_for"]))
 
@@ -716,6 +882,7 @@ def _execution_snapshot(tracker: Tracker) -> ExecutionSnapshot:
             ready.append(ticket_id)
         elif (
             ticket.status == PAUSED
+            and ticket.can_resume
             and bool(ticket.state["waits_for"])
             and all(
                 _done(tracker, dependency)
@@ -847,7 +1014,8 @@ def _roadmap_ticket_link(ticket: Ticket) -> str:
         .replace("|", "\\|")
         .replace("\n", " ")
     )
-    return f"[`{ticket.ticket_id}` {title}](issues/{ticket.path.name})"
+    target = ticket.url or f"issues/{ticket.path.name}"
+    return f"[`{ticket.ticket_id}` {title}]({target})"
 
 
 def _roadmap_text(tracker: Tracker, snapshot: ExecutionSnapshot | None = None) -> str:
@@ -895,9 +1063,14 @@ def _roadmap_text(tracker: Tracker, snapshot: ExecutionSnapshot | None = None) -
             f"- {values(targets)} <- {values(list(dependencies))} (remediation)"
         )
 
+    authority = (
+        "GitHub Issues are authoritative."
+        if tracker.backend == "github"
+        else "Ticket files are authoritative."
+    )
     return (
         "# Implementation Roadmap\n\n"
-        "<!-- Generated by tickets. Ticket files are authoritative. -->\n\n"
+        f"<!-- Generated by tickets. {authority} -->\n\n"
         "## Current\n\n"
         f"- Active: {links(list(snapshot.active))}\n"
         f"- Ready queue: {links(list(snapshot.frontier))}\n"
@@ -1004,10 +1177,19 @@ def _feature_lock(feature_root: Path) -> Iterator[None]:
 
 @contextlib.contextmanager
 def _locked_tracker(
-    feature_root: Path,
+    args: argparse.Namespace,
 ) -> Iterator[tuple[Tracker, ExecutionSnapshot]]:
-    with _feature_lock(feature_root):
-        tracker = load_tracker(feature_root)
+    lock_root = (
+        Path(args.repo_root or Path.cwd())
+        / ".scratch"
+        / "github-controller"
+        if args.tracker == "github"
+        else Path(args.feature_root)
+        if args.feature_root is not None
+        else Path.cwd() / ".scratch" / "missing-feature"
+    )
+    with _feature_lock(lock_root):
+        tracker = _load_tracker_from_args(args)
         yield tracker, _single_lane_snapshot(tracker)
 
 
@@ -1017,6 +1199,8 @@ def _sync_roadmap(
     path = tracker.roadmap_path
     rendered = _roadmap_text(tracker, snapshot)
     try:
+        if tracker.backend == "github":
+            path.parent.mkdir(parents=True, exist_ok=True)
         if not path.exists():
             _atomic_write(path, rendered, expected=None)
             return {"state": "CURRENT", "changed": True, "created": True}
@@ -1045,9 +1229,49 @@ def _write_ticket(
     _atomic_write(ticket.path, updated, expected=ticket.text)
 
 
-def _reload_after_write(feature_root: Path, ticket_id: str) -> Tracker:
+def _persist_ticket(
+    tracker: Tracker,
+    ticket: Ticket,
+    *,
+    status: str,
+    state: dict[str, Any] | None = None,
+) -> bool:
+    if tracker.backend == "local":
+        _write_ticket(ticket, status=status, state=state)
+        return True
+    state_text = _replace_state("", state).strip() if state is not None else None
+    summary = None
+    if status == PAUSED and state is not None:
+        summary = f"Paused by `$tickets`: {state.get('pause_reason') or 'No reason supplied.'}"
+    elif status == IN_PROGRESS and state is not None:
+        summary = "Resumed by `$tickets`."
+    elif status == DONE and state is not None:
+        completion = state.get("completion") or {}
+        summary = f"Completed by `$tickets`: {completion.get('note') or 'Explicit user completion.'}"
     try:
-        return load_tracker(feature_root)
+        return bool(
+            tracker.store.persist(
+                int(ticket.ticket_id),
+                status=status,
+                state_text=state_text,
+                summary=summary,
+            )
+        )
+    except GitHubStoreError as exc:
+        raise TicketCtlError(
+            str(exc),
+            kind="POST_COMMIT_ERROR" if exc.changed else exc.kind,
+            details=exc.details,
+            changed=exc.changed,
+            ticket=ticket.ticket_id,
+        ) from exc
+
+
+def _reload_after_write(args: argparse.Namespace, ticket_id: str) -> Tracker:
+    try:
+        tracker = _load_tracker_from_args(args)
+        _single_lane_snapshot(tracker)
+        return tracker
     except TicketCtlError as exc:
         cause = exc.kind
     except ENVIRONMENT_ERRORS as exc:
@@ -1083,12 +1307,24 @@ def _require_ticket(
 
 def _work_packet(tracker: Tracker, ticket: Ticket) -> dict[str, Any]:
     handoff = ticket.state.get("handoff")
-    return {
-        "source": {
+    source = (
+        {
+            "tracker": "github",
+            "feature_root": str(tracker.feature_root),
+            "repository_root": str(tracker.repo_root),
+            "repository": tracker.repository,
+            "feature_issue": tracker.feature_id,
+            "ticket_url": ticket.url,
+        }
+        if tracker.backend == "github"
+        else {
             "feature_root": str(tracker.feature_root),
             "repository_root": str(tracker.repo_root),
             "ticket_path": str(ticket.path),
-        },
+        }
+    )
+    return {
+        "source": source,
         "ticket": {
             "id": ticket.ticket_id,
             "title": ticket.title,
@@ -1120,9 +1356,10 @@ def _response(
     data: dict[str, Any] | None = None,
     next_action: dict[str, str] | None = None,
     error: dict[str, Any] | None = None,
+    schema_version: int = OUTPUT_SCHEMA_VERSION,
 ) -> dict[str, Any]:
     return {
-        "schema_version": OUTPUT_SCHEMA_VERSION,
+        "schema_version": schema_version,
         "command": command,
         "outcome": outcome,
         "ticket": ticket,
@@ -1191,11 +1428,35 @@ def _mutation_response(
         changed=changed,
         data=data,
         next_action=next_action,
+        schema_version=tracker.schema_version,
+    )
+
+
+def _load_tracker_from_args(args: argparse.Namespace) -> Tracker:
+    if args.tracker == "github":
+        return load_github_tracker(
+            Path(args.repo_root or Path.cwd()),
+            repository=args.repo,
+            feature_id=args.feature,
+        )
+    if args.feature_root is None:
+        raise TicketCtlError(
+            "the following arguments are required: --feature-root",
+            kind="USAGE_ERROR",
+        )
+    return load_tracker(Path(args.feature_root))
+
+
+def _schema_version_from_args(args: argparse.Namespace | None) -> int:
+    return (
+        GITHUB_OUTPUT_SCHEMA_VERSION
+        if args is not None and getattr(args, "tracker", "local") == "github"
+        else OUTPUT_SCHEMA_VERSION
     )
 
 
 def command_status(args: argparse.Namespace) -> dict[str, Any]:
-    tracker = load_tracker(Path(args.feature_root))
+    tracker = _load_tracker_from_args(args)
     snapshot = _single_lane_snapshot(tracker)
     active = list(snapshot.active)
     ready = list(snapshot.frontier)
@@ -1220,7 +1481,17 @@ def command_status(args: argparse.Namespace) -> dict[str, Any]:
         completion = ticket.state.get("completion") or {}
         if completion.get("method"):
             completion_methods[ticket_id] = completion["method"]
-    selected = active[0] if active else (resume + ready)[0] if resume or ready else None
+    active_is_controllable = not active or not (
+        tracker.backend == "github"
+        and not tracker.tickets[active[0]].claimed_by_current
+    )
+    selected = (
+        active[0]
+        if active and active_is_controllable
+        else (resume + ready)[0]
+        if not active and (resume or ready)
+        else None
+    )
     next_action = None
     if selected is not None:
         next_action = _ticket_action(
@@ -1250,6 +1521,7 @@ def command_status(args: argparse.Namespace) -> dict[str, Any]:
             "completion_methods": completion_methods,
         },
         next_action=next_action,
+        schema_version=tracker.schema_version,
     )
 
 
@@ -1285,8 +1557,7 @@ def _handoff_reference(tracker: Tracker, path_value: str) -> str:
 
 
 def command_next(args: argparse.Namespace) -> dict[str, Any]:
-    feature_root = Path(args.feature_root)
-    with _locked_tracker(feature_root) as (tracker, snapshot):
+    with _locked_tracker(args) as (tracker, snapshot):
         if snapshot.active:
             ticket = tracker.tickets[snapshot.active[0]]
             requested = (
@@ -1298,6 +1569,31 @@ def command_next(args: argparse.Namespace) -> dict[str, Any]:
                 raise TicketCtlError(
                     f"ticket {ticket.ticket_id} is already in progress",
                     kind="ACTIVE_TICKET_EXISTS",
+                )
+            if tracker.backend == "github" and not ticket.claimed_by_current:
+                raise TicketCtlError(
+                    f"ticket {ticket.ticket_id} is active for another user",
+                    kind="ACTIVE_TICKET_EXISTS",
+                    details={"assignees": list(ticket.claimed_by_other)},
+                )
+            if tracker.backend == "github" and ticket.state.get("pause_reason") is not None:
+                state = dict(ticket.state)
+                state["last_pause"] = {
+                    "reason": state.get("pause_reason"),
+                    "until": state.get("waits_for", []),
+                }
+                state["waits_for"] = []
+                state["pause_reason"] = None
+                changed = _persist_ticket(
+                    tracker, ticket, status=IN_PROGRESS, state=state
+                )
+                updated = _reload_after_write(args, ticket.ticket_id)
+                return _mutation_response(
+                    "next",
+                    "WORK_PACKET",
+                    updated,
+                    updated.tickets[ticket.ticket_id],
+                    changed=changed,
                 )
             return _mutation_response(
                 "next", "WORK_PACKET", tracker, ticket, changed=False
@@ -1319,8 +1615,15 @@ def command_next(args: argparse.Namespace) -> dict[str, Any]:
             ticket = tracker.tickets[candidates[0]]
         else:
             ticket = _require_ticket(tracker, args.ticket, snapshot)
+            if ticket.claimed_by_other:
+                raise TicketCtlError(
+                    f"ticket {ticket.ticket_id} is claimed by another user",
+                    kind="TICKET_NOT_READY",
+                    details={"assignees": list(ticket.claimed_by_other)},
+                )
             eligible = (
                 ticket.status == PAUSED
+                and ticket.can_resume
                 and all(
                     _done(tracker, dependency)
                     for dependency in _ticket_dependencies(ticket)
@@ -1349,8 +1652,8 @@ def command_next(args: argparse.Namespace) -> dict[str, Any]:
             }
             state["waits_for"] = []
             state["pause_reason"] = None
-        _write_ticket(ticket, status=IN_PROGRESS, state=state)
-        updated = _reload_after_write(feature_root, ticket.ticket_id)
+        _persist_ticket(tracker, ticket, status=IN_PROGRESS, state=state)
+        updated = _reload_after_write(args, ticket.ticket_id)
         return _mutation_response(
             "next",
             "WORK_PACKET",
@@ -1361,9 +1664,18 @@ def command_next(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def command_pause(args: argparse.Namespace) -> dict[str, Any]:
-    feature_root = Path(args.feature_root)
-    with _locked_tracker(feature_root) as (tracker, snapshot):
+    with _locked_tracker(args) as (tracker, snapshot):
         ticket = _active_or_existing(tracker, args.ticket, PAUSED, snapshot)
+        if (
+            tracker.backend == "github"
+            and ticket.status == IN_PROGRESS
+            and not ticket.claimed_by_current
+        ):
+            raise TicketCtlError(
+                f"ticket {ticket.ticket_id} is active for another user",
+                kind="TICKET_NOT_ACTIVE",
+                details={"assignees": list(ticket.claimed_by_other)},
+            )
         reason = args.reason.strip()
         if not reason:
             raise TicketCtlError(
@@ -1401,12 +1713,25 @@ def command_pause(args: argparse.Namespace) -> dict[str, Any]:
                 and ticket.state.get("pause_reason") == reason
                 and ticket.state.get("handoff") == handoff
             ):
+                changed = False
+                current = tracker
+                current_ticket = ticket
+                if tracker.backend == "github":
+                    changed = _persist_ticket(
+                        tracker,
+                        ticket,
+                        status=PAUSED,
+                        state=ticket.state,
+                    )
+                    if changed:
+                        current = _reload_after_write(args, ticket.ticket_id)
+                        current_ticket = current.tickets[ticket.ticket_id]
                 return _mutation_response(
                     "pause",
                     "PAUSED",
-                    tracker,
-                    ticket,
-                    changed=False,
+                    current,
+                    current_ticket,
+                    changed=changed,
                     payload=pause_data,
                 )
             raise TicketCtlError(
@@ -1426,8 +1751,8 @@ def command_pause(args: argparse.Namespace) -> dict[str, Any]:
                 kind="DEPENDENCY_CYCLE",
                 details={"cycle": cycle},
             )
-        _write_ticket(ticket, status=PAUSED, state=state)
-        updated = _reload_after_write(feature_root, ticket.ticket_id)
+        _persist_ticket(tracker, ticket, status=PAUSED, state=state)
+        updated = _reload_after_write(args, ticket.ticket_id)
         return _mutation_response(
             "pause",
             "PAUSED",
@@ -1439,13 +1764,22 @@ def command_pause(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def command_done(args: argparse.Namespace) -> dict[str, Any]:
-    feature_root = Path(args.feature_root)
-    with _locked_tracker(feature_root) as (tracker, snapshot):
+    with _locked_tracker(args) as (tracker, snapshot):
         ticket = (
             _require_ticket(tracker, args.ticket, snapshot)
             if args.ticket is not None
             else _require_single_active(tracker, None, snapshot)
         )
+        if (
+            tracker.backend == "github"
+            and ticket.status == IN_PROGRESS
+            and not ticket.claimed_by_current
+        ):
+            raise TicketCtlError(
+                f"ticket {ticket.ticket_id} is active for another user",
+                kind="TICKET_NOT_ACTIVE",
+                details={"assignees": list(ticket.claimed_by_other)},
+            )
         note = (
             args.note if args.note is not None else "Explicit user completion."
         ).strip()
@@ -1494,8 +1828,8 @@ def command_done(args: argparse.Namespace) -> dict[str, Any]:
             )
         state = dict(ticket.state)
         state["completion"] = requested_completion
-        _write_ticket(ticket, status=DONE, state=state)
-        updated = _reload_after_write(feature_root, ticket.ticket_id)
+        _persist_ticket(tracker, ticket, status=DONE, state=state)
+        updated = _reload_after_write(args, ticket.ticket_id)
         return _mutation_response(
             "done",
             "DONE",
@@ -1517,7 +1851,11 @@ def _parser() -> argparse.ArgumentParser:
     }
     for name, handler in handlers.items():
         child = subparsers.add_parser(name)
-        child.add_argument("--feature-root", required=True)
+        child.add_argument("--feature-root")
+        child.add_argument("--tracker", choices=("local", "github"), default="local")
+        child.add_argument("--repo-root")
+        child.add_argument("--repo")
+        child.add_argument("--feature")
         if name in {"next", "done", "pause"}:
             child.add_argument("--ticket")
         if name == "pause":
@@ -1570,6 +1908,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "message": str(exc),
                 "details": exc.details if exc.details is not None else {},
             },
+            schema_version=_schema_version_from_args(args),
         )
         _emit(payload)
         return 2
@@ -1583,6 +1922,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "message": "controller environment operation failed",
                 "details": {"type": type(exc).__name__, "message": str(exc)},
             },
+            schema_version=_schema_version_from_args(args),
         )
         _emit(payload)
         return 2

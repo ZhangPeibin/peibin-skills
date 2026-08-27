@@ -110,7 +110,11 @@ class TicketCtlTest(unittest.TestCase):
         self.temporary.cleanup()
 
     def run_cli(
-        self, command: str, *arguments: str, expected: int = 0
+        self,
+        command: str,
+        *arguments: str,
+        expected: int = 0,
+        env: dict[str, str] | None = None,
     ) -> tuple[dict[str, object], str]:
         completed = subprocess.run(
             [
@@ -125,6 +129,7 @@ class TicketCtlTest(unittest.TestCase):
             capture_output=True,
             text=True,
             check=False,
+            env=env,
         )
         self.assertEqual(
             completed.returncode,
@@ -138,6 +143,40 @@ class TicketCtlTest(unittest.TestCase):
         else:
             self.assertEqual(set(payload["data"]), DATA_KEYS_BY_COMMAND[command])
         return payload, completed.stdout
+
+    def test_local_status_never_invokes_github(self) -> None:
+        self.fixture.add_ticket("01")
+        fake_bin = self.root / "bin"
+        fake_bin.mkdir()
+        marker = self.root / "gh-was-invoked"
+        fake_gh = fake_bin / "gh"
+        fake_gh.write_text(
+            f"#!/bin/sh\ntouch '{marker}'\nexit 99\n",
+            encoding="utf-8",
+        )
+        fake_gh.chmod(0o755)
+        environment = os.environ.copy()
+        environment["PATH"] = f"{fake_bin}{os.pathsep}{environment['PATH']}"
+
+        payload, _ = self.run_cli("status", env=environment)
+
+        self.assertEqual(payload["outcome"], "READY")
+        self.assertFalse(marker.exists())
+
+    def test_local_mode_still_requires_an_explicit_feature_root(self) -> None:
+        completed = subprocess.run(
+            [sys.executable, str(SCRIPT), "status"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 2)
+        payload = json.loads(completed.stdout)
+        self.assertEqual(payload["schema_version"], 2)
+        self.assertEqual(payload["error"]["code"], "USAGE_ERROR")
+        self.assertIn("--feature-root", payload["error"]["message"])
 
     def handoff_file(self, ticket_id: str) -> Path:
         path = self.fixture.feature / "handoffs" / f"{ticket_id}.md"
