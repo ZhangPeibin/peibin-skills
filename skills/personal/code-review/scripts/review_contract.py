@@ -8,11 +8,13 @@ import copy
 import hashlib
 import json
 import math
+import re
 import sys
 from typing import Any
 
 
 SCHEMA_VERSION = "2.0"
+RESILIENT_SCHEMA_VERSION = "2.1"
 SUPPORTED_MAJOR = 2
 ROLES = ("internal_behavior", "external_contract")
 CORE_POLICY = {
@@ -38,6 +40,48 @@ STANDARD_PROFILE = {
     "max_active_reviewers": 4,
     "context_reserve_ratio": 0.30,
 }
+LENS_VERSION_MAJOR = 1
+LENS_ID_RE = re.compile(r"^[a-z0-9][a-z0-9.-]*/[a-z0-9][a-z0-9.-]*$")
+
+
+def _risk_lens(lens_id: str, evidence_tag: str, question: str) -> dict[str, Any]:
+    return {
+        "lens_id": lens_id,
+        "version": "1.0",
+        "kind": "risk",
+        "trust_source": "installed",
+        "applicability": {"evidence_tags": [evidence_tag]},
+        "supported_roles": list(ROLES),
+        "targeted_questions": [question],
+        "evidence_needs": ["Changed boundary, reachable callers, guards, and contracts"],
+        "context_lookups": ["Inspect only the relevant boundary and consumers read-only"],
+        "stop_conditions": ["Stop when the suspected path is unreachable"],
+        "estimated_context_tokens": 400,
+    }
+
+
+BUILTIN_LENSES = (
+    _risk_lens(
+        "risk/security-trust",
+        "risk:security",
+        "Can attacker-controlled input or identity context bypass a trust boundary?",
+    ),
+    _risk_lens(
+        "risk/data-migration",
+        "risk:data",
+        "Can rollout, rollback, existing rows, or partial execution violate data integrity?",
+    ),
+    _risk_lens(
+        "risk/concurrency-reliability",
+        "risk:concurrency",
+        "Can an interleaving, retry, timeout, or duplicate delivery violate an invariant?",
+    ),
+    _risk_lens(
+        "risk/contract-compatibility",
+        "risk:compatibility",
+        "Can a caller, stored representation, or deployment order observe an incompatible contract?",
+    ),
+)
 
 
 class ContractError(ValueError):
@@ -117,6 +161,152 @@ def _validate_anchor(raw_value: object, name: str) -> dict[str, Any]:
     return anchor
 
 
+def _validate_proposed_check(raw_value: object, name: str) -> dict[str, Any]:
+    proposal = _require_object(raw_value, name)
+    _require_fields(
+        proposal,
+        name,
+        {
+            "proposal_id",
+            "argv",
+            "purpose",
+            "scope",
+            "requires_network",
+            "requires_credentials",
+            "writes_repository",
+        },
+    )
+    _require_string(proposal["proposal_id"], f"{name}.proposal_id")
+    argv = _require_string_array(proposal["argv"], f"{name}.argv", unique=False)
+    if not argv:
+        raise ContractError(f"{name}.argv cannot be empty")
+    _require_string(proposal["purpose"], f"{name}.purpose")
+    if proposal["scope"] not in {"focused", "unit", "broad"}:
+        raise ContractError(f"{name}.scope is unsupported")
+    for field in ("requires_network", "requires_credentials", "writes_repository"):
+        if not isinstance(proposal[field], bool):
+            raise ContractError(f"{name}.{field} must be a boolean")
+    return proposal
+
+
+def _role_mandate(role: str) -> str:
+    return (
+        "Attack business logic, state transitions, boundaries, and error paths."
+        if role == "internal_behavior"
+        else "Attack callers, authorization, data, concurrency, compatibility, and deployment contracts."
+    )
+
+
+def _validate_task_budget(raw_value: object, name: str) -> dict[str, Any]:
+    budget = _require_object(raw_value, name)
+    _require_fields(budget, name, {"estimated_context_tokens", "resource_limits"})
+    _require_positive_integer(
+        budget["estimated_context_tokens"], f"{name}.estimated_context_tokens"
+    )
+    _require_object(budget["resource_limits"], f"{name}.resource_limits")
+    return budget
+
+
+def _validate_lens(raw_value: object, name: str) -> dict[str, Any]:
+    lens = _require_object(raw_value, name)
+    allowed_fields = {
+        "lens_id",
+        "version",
+        "kind",
+        "trust_source",
+        "applicability",
+        "supported_roles",
+        "targeted_questions",
+        "evidence_needs",
+        "context_lookups",
+        "stop_conditions",
+        "estimated_context_tokens",
+    }
+    _require_fields(lens, name, allowed_fields)
+    unexpected = sorted(set(lens) - allowed_fields)
+    if unexpected:
+        raise ContractError(
+            f"{name} cannot extend or override immutable core policy fields: {', '.join(unexpected)}"
+        )
+    lens_id = _require_string(lens["lens_id"], f"{name}.lens_id")
+    if LENS_ID_RE.fullmatch(lens_id) is None:
+        raise ContractError(f"{name}.lens_id must be namespaced as namespace/name")
+    version = _require_string(lens["version"], f"{name}.version")
+    try:
+        major = int(version.split(".", 1)[0])
+    except ValueError as exc:
+        raise ContractError(f"{name}.version is invalid") from exc
+    if major != LENS_VERSION_MAJOR:
+        raise ContractError(
+            f"{name}.version major {major} is unsupported; expected {LENS_VERSION_MAJOR}"
+        )
+    if lens["kind"] not in {"language", "framework", "risk"}:
+        raise ContractError(f"{name}.kind is unsupported")
+    if lens["trust_source"] not in {"installed", "system", "explicit_user"}:
+        raise ContractError(
+            f"{name}.trust_source cannot trust repository-provided content"
+        )
+    supported_roles = _require_string_array(
+        lens["supported_roles"], f"{name}.supported_roles"
+    )
+    if not supported_roles or not set(supported_roles) <= set(ROLES):
+        raise ContractError(f"{name}.supported_roles must name one or both core roles")
+    for field in (
+        "targeted_questions",
+        "evidence_needs",
+        "context_lookups",
+        "stop_conditions",
+    ):
+        values = _require_string_array(lens[field], f"{name}.{field}")
+        if not values:
+            raise ContractError(f"{name}.{field} cannot be empty")
+    _require_positive_integer(
+        lens["estimated_context_tokens"], f"{name}.estimated_context_tokens"
+    )
+    applicability = _require_object(lens["applicability"], f"{name}.applicability")
+    allowed_evidence = {"path_suffixes", "change_types", "evidence_tags"}
+    unexpected_evidence = sorted(set(applicability) - allowed_evidence)
+    if unexpected_evidence:
+        raise ContractError(
+            f"{name}.applicability contains unsupported evidence: {', '.join(unexpected_evidence)}"
+        )
+    evidence_count = 0
+    for field in allowed_evidence:
+        if field in applicability:
+            evidence_count += len(
+                _require_string_array(
+                    applicability[field], f"{name}.applicability.{field}"
+                )
+            )
+    if evidence_count == 0:
+        raise ContractError(f"{name}.applicability requires resolved change evidence")
+    return lens
+
+
+def _lens_applies(
+    lens: dict[str, Any], unit: dict[str, Any], records_by_id: dict[str, dict[str, Any]]
+) -> bool:
+    applicability = lens["applicability"]
+    unit_records = [
+        records_by_id[record_id]
+        for record_id in (
+            list(unit["changed_record_ids"]) + list(unit.get("context_record_ids", []))
+        )
+    ]
+    paths = {record["anchor"]["path"] for record in unit_records}
+    change_types = {record["change_type"] for record in unit_records}
+    evidence_tags = set(unit.get("applicability_evidence", []))
+    return (
+        any(
+            path.endswith(suffix)
+            for suffix in applicability.get("path_suffixes", [])
+            for path in paths
+        )
+        or bool(change_types & set(applicability.get("change_types", [])))
+        or bool(evidence_tags & set(applicability.get("evidence_tags", [])))
+    )
+
+
 def _validate_version(value: dict[str, Any], name: str) -> None:
     version = value.get("schema_version")
     if not isinstance(version, str):
@@ -131,8 +321,21 @@ def _validate_version(value: dict[str, Any], name: str) -> None:
         )
 
 
+def _schema_minor(value: dict[str, Any]) -> int:
+    version = value["schema_version"]
+    parts = version.split(".", 1)
+    if len(parts) == 1:
+        return 0
+    try:
+        return int(parts[1])
+    except ValueError as exc:
+        raise ContractError(f"schema_version is invalid: {version!r}") from exc
+
+
 def validate_contract(kind: str, raw_value: object) -> dict[str, Any]:
     value = _require_object(raw_value, kind)
+    if kind == "lens":
+        return _validate_lens(value, "lens")
     _validate_version(value, kind)
     required = {
         "scope_manifest": {
@@ -327,6 +530,11 @@ def validate_contract(kind: str, raw_value: object) -> dict[str, Any]:
                 _require_string(
                     unit["purpose"], f"feature_graph.review_units[{index}].purpose"
                 )
+            if "applicability_evidence" in unit:
+                _require_string_array(
+                    unit["applicability_evidence"],
+                    f"feature_graph.review_units[{index}].applicability_evidence",
+                )
             changed_record_ids = _require_string_array(
                 unit["changed_record_ids"],
                 f"feature_graph.review_units[{index}].changed_record_ids",
@@ -477,6 +685,7 @@ def validate_contract(kind: str, raw_value: object) -> dict[str, Any]:
                 )
     elif kind == "review_plan":
         unit_ids = _require_string_array(value["unit_ids"], "review_plan.unit_ids")
+        preflight = _require_object(value["preflight"], "review_plan.preflight")
         if not isinstance(value["assignments"], list):
             raise ContractError("review_plan.assignments must be an array")
         assignment_pairs: list[tuple[str, str]] = []
@@ -494,6 +703,23 @@ def validate_contract(kind: str, raw_value: object) -> dict[str, Any]:
                 raise ContractError(
                     f"review_plan.assignments[{index}].role is unsupported"
                 )
+            current_plan = _schema_minor(value) >= 1 or "lens_revision" in preflight
+            if current_plan:
+                _require_fields(
+                    assignment,
+                    f"review_plan.assignments[{index}]",
+                    {"role_mandate", "budget"},
+                )
+            if "role_mandate" in assignment:
+                _require_string(
+                    assignment["role_mandate"],
+                    f"review_plan.assignments[{index}].role_mandate",
+                )
+            if "budget" in assignment:
+                _validate_task_budget(
+                    assignment["budget"],
+                    f"review_plan.assignments[{index}].budget",
+                )
             task_ids.append(assignment["task_id"])
             assignment_pairs.append((assignment["unit_id"], assignment["role"]))
         if len(task_ids) != len(set(task_ids)):
@@ -503,7 +729,12 @@ def validate_contract(kind: str, raw_value: object) -> dict[str, Any]:
         expected_pairs = {
             (unit_id, role) for unit_id in unit_ids for role in ROLES
         }
-        if set(assignment_pairs) != expected_pairs:
+        if preflight.get("status") == "ready_degraded":
+            if assignment_pairs:
+                raise ContractError(
+                    "a degraded single-agent plan cannot claim paired assignments"
+                )
+        elif set(assignment_pairs) != expected_pairs:
             raise ContractError("review_plan must assign both required roles to every unit")
     elif kind in {"reviewer_task_envelope", "reviewer_result"}:
         if value["role"] not in ROLES:
@@ -515,6 +746,43 @@ def validate_contract(kind: str, raw_value: object) -> dict[str, Any]:
         )
         _require_string_array(value[record_field], f"{kind}.{record_field}")
         if kind == "reviewer_task_envelope":
+            allowed_fields = {
+                "schema_version",
+                "task_id",
+                "scope_id",
+                "graph_revision",
+                "unit_id",
+                "role",
+                "role_mandate",
+                "changed_record_ids",
+                "context_record_ids",
+                "active_lenses",
+                "core_policy",
+                "output_contract",
+                "budget",
+                "attempt",
+                "fresh_context_required",
+                "excluded_context",
+            }
+            unsupported_fields = sorted(set(value) - allowed_fields)
+            if unsupported_fields:
+                raise ContractError(
+                    "reviewer_task_envelope has unsupported fields: "
+                    + ", ".join(unsupported_fields)
+                )
+            if _schema_minor(value) >= 1:
+                _require_fields(
+                    value,
+                    "reviewer_task_envelope",
+                    {
+                        "graph_revision",
+                        "role_mandate",
+                        "context_record_ids",
+                        "active_lenses",
+                        "budget",
+                        "attempt",
+                    },
+                )
             if any(
                 field in value
                 for field in ("peer_result", "peer_conclusions", "reviewer_results")
@@ -526,9 +794,46 @@ def validate_contract(kind: str, raw_value: object) -> dict[str, Any]:
                 raise ContractError(
                     "reviewer_task_envelope core policy must match the immutable policy"
                 )
+            if "role_mandate" in value and value["role_mandate"] != _role_mandate(value["role"]):
+                raise ContractError(
+                    "reviewer_task_envelope role mandate must match its required role"
+                )
+            if "budget" in value:
+                _validate_task_budget(value["budget"], "reviewer_task_envelope.budget")
+            if "attempt" in value and value["attempt"] not in {1, 2}:
+                raise ContractError("reviewer_task_envelope.attempt must be 1 or 2")
+            if "fresh_context_required" in value and not isinstance(
+                value["fresh_context_required"], bool
+            ):
+                raise ContractError(
+                    "reviewer_task_envelope.fresh_context_required must be a boolean"
+                )
+            if "excluded_context" in value:
+                _require_string_array(
+                    value["excluded_context"],
+                    "reviewer_task_envelope.excluded_context",
+                )
             if value["output_contract"] != "reviewer_result@2":
                 raise ContractError(
                     "reviewer_task_envelope.output_contract must be reviewer_result@2"
+                )
+            active_lenses = _require_array(
+                value.get("active_lenses", []),
+                "reviewer_task_envelope.active_lenses",
+            )
+            active_lens_ids: list[str] = []
+            for index, raw_lens in enumerate(active_lenses):
+                lens = _validate_lens(
+                    raw_lens, f"reviewer_task_envelope.active_lenses[{index}]"
+                )
+                if value["role"] not in lens["supported_roles"]:
+                    raise ContractError(
+                        "reviewer task envelope includes a lens that does not support its role"
+                    )
+                active_lens_ids.append(lens["lens_id"])
+            if len(active_lens_ids) != len(set(active_lens_ids)):
+                raise ContractError(
+                    "reviewer task envelope active lens IDs must be unique"
                 )
         if kind == "reviewer_result":
             if value["status"] not in {"completed", "failed", "incomplete"}:
@@ -541,7 +846,19 @@ def validate_contract(kind: str, raw_value: object) -> dict[str, Any]:
             _require_array(
                 value["supporting_evidence"], "reviewer_result.supporting_evidence"
             )
-            _require_array(value["proposed_checks"], "reviewer_result.proposed_checks")
+            proposed_checks = _require_array(
+                value["proposed_checks"], "reviewer_result.proposed_checks"
+            )
+            proposal_ids: list[str] = []
+            for index, raw_proposal in enumerate(proposed_checks):
+                proposal = _validate_proposed_check(
+                    raw_proposal, f"reviewer_result.proposed_checks[{index}]"
+                )
+                proposal_ids.append(proposal["proposal_id"])
+            if len(proposal_ids) != len(set(proposal_ids)):
+                raise ContractError(
+                    "reviewer_result proposed check IDs must be unique"
+                )
             _require_array(
                 value["unresolved_assumptions"],
                 "reviewer_result.unresolved_assumptions",
@@ -558,6 +875,7 @@ def validate_contract(kind: str, raw_value: object) -> dict[str, Any]:
                 "confidence",
                 "correction_direction",
             }
+            finding_ids: list[str] = []
             for index, raw_finding in enumerate(findings):
                 finding = _require_object(
                     raw_finding, f"reviewer_result.candidate_findings[{index}]"
@@ -572,6 +890,7 @@ def validate_contract(kind: str, raw_value: object) -> dict[str, Any]:
                         finding[field],
                         f"reviewer_result.candidate_findings[{index}].{field}",
                     )
+                finding_ids.append(finding["finding_id"])
                 _validate_anchor(
                     finding["anchor"],
                     f"reviewer_result.candidate_findings[{index}].anchor",
@@ -584,6 +903,10 @@ def validate_contract(kind: str, raw_value: object) -> dict[str, Any]:
                     raise ContractError(
                         f"reviewer_result.candidate_findings[{index}].confidence is unsupported"
                     )
+            if len(finding_ids) != len(set(finding_ids)):
+                raise ContractError(
+                    "reviewer_result candidate finding IDs must be unique"
+                )
     elif kind == "coverage_ledger":
         if not isinstance(value["records"], list):
             raise ContractError("coverage_ledger.records must be an array")
@@ -612,9 +935,12 @@ def validate_contract(kind: str, raw_value: object) -> dict[str, Any]:
             for role in ROLES:
                 if role_status[role] not in {
                     "pending",
+                    "retry_pending",
                     "completed",
                     "failed",
                     "incomplete",
+                    "subdivision_required",
+                    "degraded",
                     "not_selected",
                 }:
                     raise ContractError(
@@ -683,9 +1009,12 @@ def validate_contract(kind: str, raw_value: object) -> dict[str, Any]:
                 for role in ROLES:
                     if role_status[role] not in {
                         "pending",
+                        "retry_pending",
                         "completed",
                         "failed",
                         "incomplete",
+                        "subdivision_required",
+                        "degraded",
                         "not_selected",
                     }:
                         raise ContractError(
@@ -739,12 +1068,126 @@ def _graph_revision(feature_graph: dict[str, Any]) -> str:
     return f"sha256:{hashlib.sha256(payload).hexdigest()}"
 
 
+def _lens_revision(active_lenses_by_unit: dict[str, list[dict[str, Any]]]) -> str:
+    payload = json.dumps(
+        active_lenses_by_unit,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    ).encode("utf-8")
+    return f"sha256:{hashlib.sha256(payload).hexdigest()}"
+
+
+def _budget_revision(
+    task_budgets_by_unit: dict[str, dict[str, dict[str, Any]]],
+) -> str:
+    payload = json.dumps(
+        task_budgets_by_unit,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    ).encode("utf-8")
+    return f"sha256:{hashlib.sha256(payload).hexdigest()}"
+
+
+def _expected_task_budgets(
+    units: dict[str, dict[str, Any]],
+    selected_unit_ids: set[str],
+    active_lenses_by_unit: dict[str, list[dict[str, Any]]],
+    preflight: dict[str, Any],
+) -> dict[str, dict[str, dict[str, Any]]]:
+    context_budget = _require_object(
+        preflight.get("context_budget"), "review_plan.preflight.context_budget"
+    )
+    conservative_estimate = context_budget.get("max_supplied_tokens_per_unit")
+    if conservative_estimate is not None:
+        conservative_estimate = _require_positive_integer(
+            conservative_estimate,
+            "review_plan.preflight.context_budget.max_supplied_tokens_per_unit",
+        )
+    resource_limits = _require_object(
+        preflight.get("resource_limits"), "review_plan.preflight.resource_limits"
+    )
+    effective_limits = _require_object(
+        resource_limits.get("effective"),
+        "review_plan.preflight.resource_limits.effective",
+    )
+    budgets: dict[str, dict[str, dict[str, Any]]] = {}
+    for unit_id in selected_unit_ids:
+        unit = units[unit_id]
+        raw_base_estimate = unit.get("estimated_context_tokens")
+        base_estimate = _require_positive_integer(
+            raw_base_estimate
+            if raw_base_estimate is not None
+            else conservative_estimate
+            if conservative_estimate is not None
+            else 1,
+            f"Review Unit {unit_id}.estimated_context_tokens",
+        )
+        budgets[unit_id] = {
+            role: {
+                "estimated_context_tokens": base_estimate
+                + sum(
+                    lens["estimated_context_tokens"]
+                    for lens in active_lenses_by_unit[unit_id]
+                    if role in lens["supported_roles"]
+                ),
+                "resource_limits": effective_limits,
+            }
+            for role in ROLES
+        }
+    return budgets
+
+
+def _validate_partial_review_provenance(
+    preflight: dict[str, Any],
+    graph_revision: str,
+    selected_unit_ids: set[str],
+    unselected_unit_ids: set[str],
+) -> None:
+    if preflight.get("status") != "ready_partial":
+        return
+    if not unselected_unit_ids:
+        raise ContractError("a paired partial review must leave an executable unit unselected")
+    decision = _require_object(
+        preflight.get("budget_decision"),
+        "review_plan.preflight.budget_decision",
+    )
+    _require_fields(
+        decision,
+        "review_plan.preflight.budget_decision",
+        {
+            "kind",
+            "approved",
+            "graph_revision",
+            "selection_basis",
+            "selected_unit_ids",
+        },
+    )
+    decision_unit_ids = _require_string_array(
+        decision["selected_unit_ids"],
+        "review_plan.preflight.budget_decision.selected_unit_ids",
+    )
+    if (
+        decision["kind"] != "paired_partial_review"
+        or decision["approved"] is not True
+        or decision["graph_revision"] != graph_revision
+        or decision["selection_basis"] != "risk_prioritized"
+        or set(decision_unit_ids) != selected_unit_ids
+    ):
+        raise ContractError(
+            "paired partial review requires an approved graph-bound budget decision"
+        )
+
+
 def _build_bundle(
     scope: dict[str, Any],
     feature_graph: dict[str, Any],
     environment: dict[str, Any],
     budget_decision: dict[str, Any] | None = None,
     previous_plan: dict[str, Any] | None = None,
+    degraded_fallback: dict[str, Any] | None = None,
+    trusted_lenses: list[Any] | None = None,
 ) -> dict[str, Any]:
     validate_contract("feature_graph", feature_graph)
     scope_id = scope["scope_id"]
@@ -766,6 +1209,35 @@ def _build_bundle(
     if not graph_units:
         raise ContractError("cannot build a review plan without an executable Review Unit")
     graph_revision = _graph_revision(feature_graph)
+    records_by_id = {
+        record["record_id"]: record for record in scope["changed_records"]
+    }
+    provided_lens_count = len(trusted_lenses or [])
+    lens_catalog: list[dict[str, Any]] = []
+    for index, raw_lens in enumerate((trusted_lenses or []) + list(BUILTIN_LENSES)):
+        lens_catalog.append(_validate_lens(raw_lens, f"trusted_lenses[{index}]"))
+    lens_ids = [lens["lens_id"] for lens in lens_catalog]
+    if len(lens_ids) != len(set(lens_ids)):
+        raise ContractError("trusted lens IDs must be unique and cannot override built-in lenses")
+    active_lenses_by_unit = {
+        unit["unit_id"]: [
+            lens
+            for lens in lens_catalog
+            if _lens_applies(lens, unit, records_by_id)
+        ]
+        for unit in graph_units
+    }
+    active_lens_ids = {
+        lens["lens_id"]
+        for lenses in active_lenses_by_unit.values()
+        for lens in lenses
+    }
+    inapplicable_lens_ids = [
+        lens_id
+        for lens_id in lens_ids[:provided_lens_count]
+        if lens_id not in active_lens_ids
+    ]
+    lens_revision = _lens_revision(active_lenses_by_unit)
     graph_unit_ids = [unit["unit_id"] for unit in graph_units]
     preflight_sequence = 1
     preflight_trigger = "initial"
@@ -880,6 +1352,7 @@ def _build_bundle(
             environment["usable_context_tokens"], "environment.usable_context_tokens"
         )
     unit_context_estimates: dict[str, int] = {}
+    unit_role_context_estimates: dict[str, dict[str, int]] = {}
     estimates_are_declared = True
     for unit in units:
         estimate = unit.get("estimated_context_tokens")
@@ -893,9 +1366,20 @@ def _build_bundle(
                 if usable_context_tokens is not None
                 else 1
             )
-        unit_context_estimates[unit["unit_id"]] = _require_positive_integer(
+        base_estimate = _require_positive_integer(
             estimate, f"Review Unit {unit['unit_id']}.estimated_context_tokens"
         )
+        role_estimates = {
+            role: base_estimate
+            + sum(
+                lens["estimated_context_tokens"]
+                for lens in active_lenses_by_unit[unit["unit_id"]]
+                if role in lens["supported_roles"]
+            )
+            for role in ROLES
+        }
+        unit_role_context_estimates[unit["unit_id"]] = role_estimates
+        unit_context_estimates[unit["unit_id"]] = max(role_estimates.values())
 
     raw_resource_limits = environment.get("resource_limits", {})
     resource_limits = _require_object(
@@ -918,6 +1402,19 @@ def _build_bundle(
             and not isinstance(host_value, bool)
             else host_value
         )
+    task_budgets_by_unit = {
+        unit["unit_id"]: {
+            role: {
+                "estimated_context_tokens": unit_role_context_estimates[
+                    unit["unit_id"]
+                ][role],
+                "resource_limits": effective_limits,
+            }
+            for role in ROLES
+        }
+        for unit in units
+    }
+    budget_revision = _budget_revision(task_budgets_by_unit)
     assignments: list[dict[str, Any]] = []
     envelopes: list[dict[str, Any]] = []
     for unit in units:
@@ -930,40 +1427,47 @@ def _build_bundle(
                 f"Review Unit {unit['unit_id']} context must come from the Scope Manifest"
             )
         for role in ROLES:
+            role_mandate = _role_mandate(role)
+            task_budget = task_budgets_by_unit[unit["unit_id"]][role]
             task_id = _stable_id(
-                "task", scope_id, graph_revision, unit["unit_id"], role
+                "task",
+                scope_id,
+                graph_revision,
+                lens_revision,
+                budget_revision,
+                unit["unit_id"],
+                role,
             )
             assignments.append(
                 {
                     "task_id": task_id,
                     "unit_id": unit["unit_id"],
                     "role": role,
+                    "role_mandate": role_mandate,
+                    "budget": task_budget,
                     "attempt": 1,
                 }
             )
             envelopes.append(
                 {
-                    "schema_version": SCHEMA_VERSION,
+                    "schema_version": RESILIENT_SCHEMA_VERSION,
                     "task_id": task_id,
                     "scope_id": scope_id,
                     "graph_revision": graph_revision,
                     "unit_id": unit["unit_id"],
                     "role": role,
-                    "role_mandate": (
-                        "Attack business logic, state transitions, boundaries, and error paths."
-                        if role == "internal_behavior"
-                        else "Attack callers, authorization, data, concurrency, compatibility, and deployment contracts."
-                    ),
+                    "role_mandate": role_mandate,
+                    "attempt": 1,
                     "changed_record_ids": list(unit["changed_record_ids"]),
                     "context_record_ids": context_record_ids,
+                    "active_lenses": [
+                        lens
+                        for lens in active_lenses_by_unit[unit["unit_id"]]
+                        if role in lens["supported_roles"]
+                    ],
                     "core_policy": CORE_POLICY,
                     "output_contract": "reviewer_result@2",
-                    "budget": {
-                        "estimated_context_tokens": unit_context_estimates[
-                            unit["unit_id"]
-                        ],
-                        "resource_limits": effective_limits,
-                    },
+                    "budget": task_budget,
                 }
             )
 
@@ -1018,15 +1522,41 @@ def _build_bundle(
         )
     if not effective_concurrency:
         blocking_reasons.append("no_reviewer_capacity_after_main_agent_reservation")
-    dispatch_ready = not blocking_reasons
+    degraded_ready = False
+    if degraded_fallback is not None:
+        if degraded_fallback.get("kind") != "single_agent":
+            raise ContractError("degraded_fallback.kind must be single_agent")
+        if degraded_fallback.get("approved") is not True:
+            raise ContractError("degraded single-agent fallback must be explicitly approved")
+        if degraded_fallback.get("scope_id") != scope_id:
+            raise ContractError(
+                "degraded single-agent fallback must be bound to the frozen scope_id"
+            )
+        if degraded_fallback.get("graph_revision") != graph_revision:
+            raise ContractError(
+                "degraded single-agent fallback must be bound to the current graph revision"
+            )
+        if blocking_reasons != [
+            "no_reviewer_capacity_after_main_agent_reservation"
+        ]:
+            raise ContractError(
+                "degraded single-agent fallback is allowed only when isolated subagents are unavailable"
+            )
+        degraded_ready = True
+        blocking_reasons = []
+    dispatch_ready = not blocking_reasons and not degraded_ready
+    planned_assignments = [] if degraded_ready else assignments
     review_plan = {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": RESILIENT_SCHEMA_VERSION,
         "scope_id": scope_id,
         "policy_version": CORE_POLICY["version"],
         "unit_ids": unit_ids,
-        "assignments": assignments,
+        "assignments": planned_assignments,
         "preflight": {
             "status": (
+                "ready_degraded"
+                if degraded_ready
+                else
                 "ready_partial"
                 if dispatch_ready and partial_review
                 else "ready" if dispatch_ready else "paused"
@@ -1034,7 +1564,8 @@ def _build_bundle(
             "executable_units": len(graph_units),
             "graph_executable_units": len(graph_units),
             "selected_executable_units": len(units),
-            "required_reviewer_passes": reviewer_passes,
+            "required_reviewer_passes": 0 if degraded_ready else reviewer_passes,
+            "paired_reviewer_passes": reviewer_passes,
             "effective_concurrency": effective_concurrency,
             "waves": waves,
             "context_budget": context_budget,
@@ -1052,11 +1583,29 @@ def _build_bundle(
             "sequence": preflight_sequence,
             "trigger": preflight_trigger,
             "graph_revision": graph_revision,
+            "lens_revision": lens_revision,
+            "budget_revision": budget_revision,
+            "task_budgets_by_unit": task_budgets_by_unit,
+            "active_lens_ids_by_unit": {
+                unit_id: [lens["lens_id"] for lens in lenses]
+                for unit_id, lenses in active_lenses_by_unit.items()
+            },
+            "active_lenses_by_unit": active_lenses_by_unit,
+            "inapplicable_lens_ids": inapplicable_lens_ids,
             "graph_changed": graph_changed,
             "graph_unit_ids": graph_unit_ids,
             "added_unit_ids": added_unit_ids,
         },
     }
+    if degraded_ready:
+        review_plan["preflight"].update(
+            {
+                "review_mode": "single_agent_v1_compatible",
+                "reviewer_independence": "degraded",
+                "coverage_claim": "degraded",
+                "degraded_fallback": degraded_fallback,
+            }
+        )
     if previous_graph_revision is not None:
         review_plan["preflight"]["previous_graph_revision"] = previous_graph_revision
     if budget_decision is not None:
@@ -1071,6 +1620,9 @@ def _build_bundle(
         review_plan["preflight"]["required_action"] = (
             "subdivide_by_behavior_state_transition_or_contract"
         )
+    if "no_reviewer_capacity_after_main_agent_reservation" in blocking_reasons:
+        review_plan["preflight"]["degraded_fallback_choice"] = "single_agent"
+        review_plan["preflight"]["degraded_fallback_requires_explicit_approval"] = True
     if not dispatch_ready:
         envelopes = []
     coverage_ledger = {
@@ -1082,7 +1634,9 @@ def _build_bundle(
                 "primary_owner": feature_graph["ownership"][record["record_id"]],
                 "role_status": {
                     role: (
-                        "pending"
+                        "degraded"
+                        if degraded_ready
+                        else "pending"
                         if feature_graph["ownership"][record["record_id"]]
                         in selected_unit_id_set
                         else "not_selected"
@@ -1096,7 +1650,9 @@ def _build_bundle(
                     in selected_unit_id_set
                 ),
                 "uncovered_reason": (
-                    None
+                    "degraded_single_agent_fallback"
+                    if degraded_ready
+                    else None
                     if feature_graph["ownership"][record["record_id"]]
                     in selected_unit_id_set
                     else "not_selected_by_partial_review"
@@ -1109,7 +1665,9 @@ def _build_bundle(
                 "unit_id": unit["unit_id"],
                 "role_status": {
                     role: (
-                        "pending"
+                    "degraded"
+                    if degraded_ready
+                    else "pending"
                         if unit["unit_id"] in selected_unit_id_set
                         else "not_selected"
                     )
@@ -1119,14 +1677,20 @@ def _build_bundle(
                 "covered": False,
                 "selected_for_review": unit["unit_id"] in selected_unit_id_set,
                 "uncovered_reason": (
-                    None
+                    "degraded_single_agent_fallback"
+                    if degraded_ready
+                    else None
                     if unit["unit_id"] in selected_unit_id_set
                     else "not_selected_by_partial_review"
                 ),
             }
             for unit in graph_units
         ],
-        "uncovered_record_ids": unselected_record_ids,
+        "uncovered_record_ids": (
+            [record["record_id"] for record in scope["changed_records"]]
+            if degraded_ready
+            else unselected_record_ids
+        ),
         "complete": False,
     }
 
@@ -1163,8 +1727,24 @@ def build_graph(raw_value: object) -> dict[str, Any]:
         if "previous_review_plan" in value
         else None
     )
+    degraded_fallback = (
+        _require_object(value["degraded_fallback"], "degraded_fallback")
+        if "degraded_fallback" in value
+        else None
+    )
+    trusted_lenses = (
+        _require_array(value["trusted_lenses"], "trusted_lenses")
+        if "trusted_lenses" in value
+        else []
+    )
     return _build_bundle(
-        scope, feature_graph, environment, budget_decision, previous_plan
+        scope,
+        feature_graph,
+        environment,
+        budget_decision,
+        previous_plan,
+        degraded_fallback,
+        trusted_lenses,
     )
 
 
@@ -1208,7 +1788,9 @@ def build_one_unit(
     return _build_bundle(scope, feature_graph, {})
 
 
-def complete_graph(raw_value: object) -> dict[str, Any]:
+def complete_graph(
+    raw_value: object, *, allow_legacy: bool = False
+) -> dict[str, Any]:
     value = _require_object(raw_value, "completion input")
     _require_fields(value, "completion input", {"bundle", "reviewer_results"})
     bundle = _require_object(value["bundle"], "bundle")
@@ -1227,6 +1809,16 @@ def complete_graph(raw_value: object) -> dict[str, Any]:
     graph = validate_contract("feature_graph", bundle["feature_graph"])
     plan = validate_contract("review_plan", bundle["review_plan"])
     ledger = validate_contract("coverage_ledger", bundle["coverage_ledger"])
+    plan_minor = _schema_minor(plan)
+    if allow_legacy:
+        if plan_minor != 0:
+            raise ContractError(
+                "complete-legacy-graph accepts only explicit legacy 2.0 Review Plans"
+            )
+    elif plan_minor < 1:
+        raise ContractError(
+            "legacy 2.0 Review Plans require the explicit complete-legacy-graph command"
+        )
     if any(item["scope_id"] != scope["scope_id"] for item in (graph, plan, ledger)):
         raise ContractError("bundle contracts do not share one frozen scope_id")
 
@@ -1250,33 +1842,120 @@ def complete_graph(raw_value: object) -> dict[str, Any]:
     if plan["policy_version"] != CORE_POLICY["version"]:
         raise ContractError("Review Plan policy version does not match the core policy")
 
+    expected_active_lenses: dict[str, list[dict[str, Any]]] = {}
+    if "lens_revision" in preflight:
+        raw_lenses_by_unit = _require_object(
+            preflight.get("active_lenses_by_unit"),
+            "review_plan.preflight.active_lenses_by_unit",
+        )
+        if set(raw_lenses_by_unit) != set(units):
+            raise ContractError(
+                "Review Plan active lenses must describe every executable unit"
+            )
+        for lens_unit_id, raw_lenses in raw_lenses_by_unit.items():
+            lenses: list[dict[str, Any]] = []
+            lens_ids: list[str] = []
+            for index, raw_lens in enumerate(
+                _require_array(
+                    raw_lenses,
+                    f"review_plan.preflight.active_lenses_by_unit.{lens_unit_id}",
+                )
+            ):
+                lens = _validate_lens(
+                    raw_lens,
+                    f"review_plan.preflight.active_lenses_by_unit.{lens_unit_id}[{index}]",
+                )
+                lenses.append(lens)
+                lens_ids.append(lens["lens_id"])
+            if len(lens_ids) != len(set(lens_ids)):
+                raise ContractError(
+                    f"Review Plan active lens IDs must be unique for {lens_unit_id}"
+                )
+            expected_active_lenses[lens_unit_id] = lenses
+        if _lens_revision(expected_active_lenses) != preflight["lens_revision"]:
+            raise ContractError(
+                "Review Plan active lens content does not match its lens revision"
+            )
+        expected_lens_ids = {
+            unit_id: [lens["lens_id"] for lens in lenses]
+            for unit_id, lenses in expected_active_lenses.items()
+        }
+        if preflight.get("active_lens_ids_by_unit") != expected_lens_ids:
+            raise ContractError(
+                "Review Plan active lens IDs do not match frozen lens content"
+            )
+
     selected_unit_ids = set(plan["unit_ids"])
     if not selected_unit_ids or not selected_unit_ids <= set(units):
         raise ContractError("Review Plan units do not match the Feature Graph")
-    if preflight["status"] == "ready" and selected_unit_ids != set(units):
+    unselected_unit_ids = set(units) - selected_unit_ids
+    if preflight.get("status") == "ready" and unselected_unit_ids:
         raise ContractError("a complete Review Plan must select every executable unit")
-    expected_unselected_units = set(units) - selected_unit_ids
-    if set(preflight.get("unselected_unit_ids", [])) != expected_unselected_units:
+    if set(preflight.get("unselected_unit_ids", [])) != unselected_unit_ids:
         raise ContractError("Review Plan unselected units do not match the Feature Graph")
-    expected_unselected_records = {
+    unselected_record_ids = {
         record_id
         for record_id, owner in graph["ownership"].items()
-        if owner in expected_unselected_units
+        if owner in unselected_unit_ids
     }
-    if set(preflight.get("unselected_record_ids", [])) != expected_unselected_records:
-        raise ContractError("Review Plan uncovered records do not match selected units")
+    if set(preflight.get("unselected_record_ids", [])) != unselected_record_ids:
+        raise ContractError("Review Plan unselected records do not match ownership")
+    _validate_partial_review_provenance(
+        preflight,
+        graph_revision,
+        selected_unit_ids,
+        unselected_unit_ids,
+    )
+
+    expected_task_budgets: dict[str, dict[str, dict[str, Any]]] = {}
+    if "budget_revision" in preflight:
+        if "lens_revision" not in preflight:
+            raise ContractError("budget revision requires a lens-aware Review Plan")
+        expected_task_budgets = _expected_task_budgets(
+            units,
+            selected_unit_ids,
+            expected_active_lenses,
+            preflight,
+        )
+        raw_task_budgets = _require_object(
+            preflight.get("task_budgets_by_unit"),
+            "review_plan.preflight.task_budgets_by_unit",
+        )
+        if (
+            raw_task_budgets != expected_task_budgets
+            or _budget_revision(expected_task_budgets)
+            != preflight["budget_revision"]
+        ):
+            raise ContractError(
+                "Review Plan task budgets do not match the canonical budget"
+            )
+    elif "lens_revision" in preflight:
+        raise ContractError("current Review Plan is missing canonical budget metadata")
 
     expected_assignments: dict[tuple[str, str], dict[str, Any]] = {}
     for assignment in plan["assignments"]:
         key = (assignment["unit_id"], assignment["role"])
+        task_identity_parts = [scope["scope_id"], graph_revision]
+        if "lens_revision" in preflight:
+            task_identity_parts.append(preflight["lens_revision"])
+        if "budget_revision" in preflight:
+            task_identity_parts.append(preflight["budget_revision"])
         if assignment["task_id"] != _stable_id(
-            "task", scope["scope_id"], graph_revision, *key
+            "task", *task_identity_parts, *key
         ):
             raise ContractError(
                 f"Review Plan task_id does not match graph revision for {key[0]} {key[1]}"
             )
         if assignment["attempt"] != 1:
             raise ContractError("Review Plan completion requires the first planned attempt")
+        if expected_task_budgets and (
+            assignment["role_mandate"] != _role_mandate(assignment["role"])
+            or assignment["budget"]
+            != expected_task_budgets[assignment["unit_id"]][assignment["role"]]
+        ):
+            raise ContractError(
+                f"Review Plan assignment does not match the canonical budget or mandate for {key[0]} {key[1]}"
+            )
         expected_assignments[key] = assignment
 
     raw_envelopes = _require_array(
@@ -1287,6 +1966,14 @@ def complete_graph(raw_value: object) -> dict[str, Any]:
     envelopes: dict[tuple[str, str], dict[str, Any]] = {}
     for raw_envelope in raw_envelopes:
         envelope = validate_contract("reviewer_task_envelope", raw_envelope)
+        if allow_legacy and _schema_minor(envelope) != 0:
+            raise ContractError(
+                "complete-legacy-graph requires legacy 2.0 Reviewer Task Envelopes"
+            )
+        if not allow_legacy and _schema_minor(envelope) < 1:
+            raise ContractError(
+                "current completion requires 2.1 Reviewer Task Envelopes"
+            )
         key = (envelope["unit_id"], envelope["role"])
         if key in envelopes:
             raise ContractError(
@@ -1296,6 +1983,13 @@ def complete_graph(raw_value: object) -> dict[str, Any]:
         if assignment is None or envelope["task_id"] != assignment["task_id"]:
             raise ContractError(
                 f"reviewer task envelope does not match plan for {key[0]} {key[1]}"
+            )
+        if expected_task_budgets and (
+            envelope.get("role_mandate") != assignment["role_mandate"]
+            or envelope.get("budget") != assignment["budget"]
+        ):
+            raise ContractError(
+                f"reviewer task envelope role mandate or budget does not match the plan for {key[0]} {key[1]}"
             )
         if envelope["scope_id"] != scope["scope_id"]:
             raise ContractError(
@@ -1316,6 +2010,16 @@ def complete_graph(raw_value: object) -> dict[str, Any]:
             raise ContractError(
                 f"reviewer task envelope context does not match the Feature Graph for {key[0]} {key[1]}"
             )
+        if expected_active_lenses:
+            role_lenses = [
+                lens
+                for lens in expected_active_lenses[key[0]]
+                if key[1] in lens["supported_roles"]
+            ]
+            if envelope.get("active_lenses", []) != role_lenses:
+                raise ContractError(
+                    f"reviewer task envelope active lenses do not match the lens revision for {key[0]} {key[1]}"
+                )
         envelopes[key] = envelope
     if set(envelopes) != set(expected_assignments):
         raise ContractError("reviewer task envelopes must cover every planned role")
@@ -1337,7 +2041,7 @@ def complete_graph(raw_value: object) -> dict[str, Any]:
             raise ContractError("Coverage Ledger must be pending before result completion")
         if entry.get("selected_for_review", selected) is not selected:
             raise ContractError("Coverage Ledger record selection does not match Review Plan")
-    if set(ledger.get("uncovered_record_ids", [])) != expected_unselected_records:
+    if set(ledger.get("uncovered_record_ids", [])) != unselected_record_ids:
         raise ContractError("Coverage Ledger uncovered records do not match Review Plan")
     ledger_units = _require_array(ledger.get("units"), "coverage_ledger.units")
     ledger_by_unit = {entry["unit_id"]: entry for entry in ledger_units}
@@ -1432,6 +2136,11 @@ def complete_graph(raw_value: object) -> dict[str, Any]:
     return {
         "coverage_ledger": completed_ledger,
         "candidate_findings": candidates,
+        "review_mode": (
+            "resilient_lenses_v2"
+            if not allow_legacy
+            else "legacy_v2_all_success"
+        ),
         "main_agent_action": "verify, deduplicate, calibrate, and report through the evidence gate",
     }
 
@@ -1444,6 +2153,991 @@ def complete_one_unit(raw_value: object) -> dict[str, Any]:
     if not isinstance(units, list) or len(units) != 1:
         raise ContractError("complete-one-unit requires exactly one Review Unit")
     return complete_graph(raw_value)
+
+
+def _retry_task_id(initial_task_id: str) -> str:
+    return _stable_id("retry", initial_task_id, "attempt-2")
+
+
+def _lifecycle_state(
+    bundle: dict[str, Any], graph_revision: str
+) -> dict[str, Any]:
+    existing = bundle.get("review_lifecycle")
+    if existing is not None:
+        state = _require_object(existing, "bundle.review_lifecycle")
+        _require_fields(
+            state,
+            "bundle.review_lifecycle",
+            {
+                "schema_version",
+                "scope_id",
+                "graph_revision",
+                "roles",
+                "accepted_results",
+            },
+        )
+        _validate_version(state, "bundle.review_lifecycle")
+        if state["scope_id"] != bundle["scope_manifest"]["scope_id"]:
+            raise ContractError("review lifecycle does not share the frozen scope_id")
+        if state["graph_revision"] != graph_revision:
+            raise ContractError("review lifecycle graph revision is stale")
+        _require_array(state["roles"], "bundle.review_lifecycle.roles")
+        _require_array(
+            state["accepted_results"], "bundle.review_lifecycle.accepted_results"
+        )
+        return state
+
+    return {
+        "schema_version": RESILIENT_SCHEMA_VERSION,
+        "scope_id": bundle["scope_manifest"]["scope_id"],
+        "graph_revision": graph_revision,
+        "roles": [
+            {
+                "unit_id": assignment["unit_id"],
+                "role": assignment["role"],
+                "state": "pending",
+                "attempts": 0,
+                "last_failure": None,
+            }
+            for assignment in bundle["review_plan"]["assignments"]
+        ],
+        "accepted_results": [],
+    }
+
+
+def _lifecycle_bundle(raw_bundle: object) -> tuple[
+    dict[str, Any],
+    dict[str, Any],
+    dict[str, Any],
+    dict[str, Any],
+    dict[str, Any],
+]:
+    bundle = copy.deepcopy(_require_object(raw_bundle, "bundle"))
+    _require_fields(
+        bundle,
+        "bundle",
+        {
+            "scope_manifest",
+            "feature_graph",
+            "review_plan",
+            "reviewer_task_envelopes",
+            "coverage_ledger",
+        },
+    )
+    scope = validate_contract("scope_manifest", bundle["scope_manifest"])
+    graph = validate_contract("feature_graph", bundle["feature_graph"])
+    plan = validate_contract("review_plan", bundle["review_plan"])
+    ledger = validate_contract("coverage_ledger", bundle["coverage_ledger"])
+    if any(item["scope_id"] != scope["scope_id"] for item in (graph, plan, ledger)):
+        raise ContractError("bundle contracts do not share one frozen scope_id")
+    preflight = _require_object(plan["preflight"], "review_plan.preflight")
+    if preflight.get("status") not in {"ready", "ready_partial"}:
+        raise ContractError("review lifecycle requires a dispatch-ready paired plan")
+    graph_revision = _graph_revision(graph)
+    if preflight.get("graph_revision") != graph_revision:
+        raise ContractError("Review Plan graph revision does not match the Feature Graph")
+    if plan["policy_version"] != CORE_POLICY["version"]:
+        raise ContractError("Review Plan policy version does not match the core policy")
+    units = {
+        unit["unit_id"]: unit
+        for unit in graph["review_units"]
+        if unit.get("executable") is True
+    }
+    selected_unit_ids = set(plan["unit_ids"])
+    if not selected_unit_ids or not selected_unit_ids <= set(units):
+        raise ContractError("Review Plan units do not match the Feature Graph")
+    unselected_unit_ids = set(units) - selected_unit_ids
+    if preflight.get("status") == "ready" and unselected_unit_ids:
+        raise ContractError("a complete Review Plan must select every executable unit")
+    if set(preflight.get("unselected_unit_ids", [])) != unselected_unit_ids:
+        raise ContractError("Review Plan unselected units do not match the Feature Graph")
+    unselected_record_ids = {
+        record_id
+        for record_id, owner in graph["ownership"].items()
+        if owner in unselected_unit_ids
+    }
+    if set(preflight.get("unselected_record_ids", [])) != unselected_record_ids:
+        raise ContractError("Review Plan unselected records do not match ownership")
+
+    _validate_partial_review_provenance(
+        preflight,
+        graph_revision,
+        selected_unit_ids,
+        unselected_unit_ids,
+    )
+
+    active_lenses_by_unit: dict[str, list[dict[str, Any]]] = {
+        unit_id: [] for unit_id in units
+    }
+    if "lens_revision" in preflight:
+        raw_lenses_by_unit = _require_object(
+            preflight.get("active_lenses_by_unit"),
+            "review_plan.preflight.active_lenses_by_unit",
+        )
+        if set(raw_lenses_by_unit) != set(units):
+            raise ContractError(
+                "Review Plan active lenses must describe every executable unit"
+            )
+        for lens_unit_id, raw_lenses in raw_lenses_by_unit.items():
+            lenses = [
+                _validate_lens(
+                    raw_lens,
+                    f"review_plan.preflight.active_lenses_by_unit.{lens_unit_id}[{index}]",
+                )
+                for index, raw_lens in enumerate(
+                    _require_array(
+                        raw_lenses,
+                        f"review_plan.preflight.active_lenses_by_unit.{lens_unit_id}",
+                    )
+                )
+            ]
+            if len({lens["lens_id"] for lens in lenses}) != len(lenses):
+                raise ContractError(
+                    f"Review Plan active lens IDs must be unique for {lens_unit_id}"
+                )
+            active_lenses_by_unit[lens_unit_id] = lenses
+        if _lens_revision(active_lenses_by_unit) != preflight["lens_revision"]:
+            raise ContractError(
+                "Review Plan active lens content does not match its lens revision"
+            )
+
+    if "lens_revision" not in preflight or "budget_revision" not in preflight:
+        raise ContractError(
+            "review lifecycle requires current lens and canonical budget metadata"
+        )
+    expected_task_budgets = _expected_task_budgets(
+        units,
+        selected_unit_ids,
+        active_lenses_by_unit,
+        preflight,
+    )
+    raw_task_budgets = _require_object(
+        preflight.get("task_budgets_by_unit"),
+        "review_plan.preflight.task_budgets_by_unit",
+    )
+    if (
+        raw_task_budgets != expected_task_budgets
+        or _budget_revision(expected_task_budgets) != preflight["budget_revision"]
+    ):
+        raise ContractError("Review Plan task budgets do not match the canonical budget")
+
+    task_identity_parts = [
+        scope["scope_id"],
+        graph_revision,
+        preflight["lens_revision"],
+        preflight["budget_revision"],
+    ]
+    assignments: dict[tuple[str, str], dict[str, Any]] = {}
+    for assignment in plan["assignments"]:
+        key = (assignment["unit_id"], assignment["role"])
+        if assignment["task_id"] != _stable_id(
+            "task", *task_identity_parts, *key
+        ):
+            raise ContractError(
+                f"Review Plan task_id does not match frozen graph and lenses for {key[0]} {key[1]}"
+            )
+        if (
+            assignment["role_mandate"] != _role_mandate(assignment["role"])
+            or assignment["budget"]
+            != expected_task_budgets[assignment["unit_id"]][assignment["role"]]
+        ):
+            raise ContractError(
+                f"Review Plan assignment does not match the canonical budget or mandate for {key[0]} {key[1]}"
+            )
+        assignments[key] = assignment
+    envelopes: dict[tuple[str, str], dict[str, Any]] = {}
+    for raw_envelope in _require_array(
+        bundle["reviewer_task_envelopes"], "bundle.reviewer_task_envelopes"
+    ):
+        envelope = validate_contract("reviewer_task_envelope", raw_envelope)
+        key = (envelope["unit_id"], envelope["role"])
+        assignment = assignments.get(key)
+        if (
+            key in envelopes
+            or assignment is None
+            or envelope["task_id"] != assignment["task_id"]
+            or envelope["scope_id"] != scope["scope_id"]
+            or envelope.get("graph_revision") != graph_revision
+        ):
+            raise ContractError(
+                f"reviewer task envelope does not match frozen plan for {key[0]} {key[1]}"
+            )
+        if envelope["role_mandate"] != assignment["role_mandate"]:
+            raise ContractError(
+                f"reviewer task envelope role mandate does not match frozen plan for {key[0]} {key[1]}"
+            )
+        if envelope["budget"] != assignment["budget"]:
+            raise ContractError(
+                f"reviewer task envelope budget does not match frozen plan for {key[0]} {key[1]}"
+            )
+        unit = units[key[0]]
+        expected_role_lenses = [
+            lens
+            for lens in active_lenses_by_unit[key[0]]
+            if key[1] in lens["supported_roles"]
+        ]
+        if (
+            set(envelope["changed_record_ids"])
+            != set(unit["changed_record_ids"])
+            or set(envelope.get("context_record_ids", []))
+            != set(unit.get("context_record_ids", []))
+            or envelope.get("active_lenses", []) != expected_role_lenses
+        ):
+            raise ContractError(
+                f"reviewer task envelope evidence or lenses do not match frozen plan for {key[0]} {key[1]}"
+            )
+        envelopes[key] = envelope
+    if set(envelopes) != set(assignments):
+        raise ContractError("reviewer task envelopes must cover every planned role")
+
+    lifecycle = _lifecycle_state(bundle, graph_revision)
+    lifecycle_roles: dict[tuple[str, str], dict[str, Any]] = {}
+    for index, raw_entry in enumerate(lifecycle["roles"]):
+        entry = _require_object(raw_entry, f"review_lifecycle.roles[{index}]")
+        _require_fields(
+            entry,
+            f"review_lifecycle.roles[{index}]",
+            {"unit_id", "role", "state", "attempts", "last_failure"},
+        )
+        key = (entry["unit_id"], entry["role"])
+        if key in lifecycle_roles or key not in assignments:
+            raise ContractError("review lifecycle roles must match planned assignments")
+        if entry["state"] not in {
+            "pending",
+            "retry_pending",
+            "completed",
+            "incomplete",
+            "subdivision_required",
+        }:
+            raise ContractError("review lifecycle role state is unsupported")
+        if (
+            not isinstance(entry["attempts"], int)
+            or isinstance(entry["attempts"], bool)
+            or entry["attempts"] not in {0, 1, 2}
+        ):
+            raise ContractError("review lifecycle attempts must be 0, 1, or 2")
+        valid_attempts_by_state = {
+            "pending": {0},
+            "retry_pending": {1},
+            "completed": {1, 2},
+            "incomplete": {2},
+            "subdivision_required": {1, 2},
+        }
+        if entry["attempts"] not in valid_attempts_by_state[entry["state"]]:
+            raise ContractError(
+                "review lifecycle state and attempts are inconsistent"
+            )
+        if entry["state"] in {"pending", "completed"}:
+            if entry["last_failure"] is not None:
+                raise ContractError(
+                    "pending or completed lifecycle roles cannot retain a failure"
+                )
+        else:
+            _require_string(
+                entry["last_failure"],
+                f"review_lifecycle.roles[{index}].last_failure",
+            )
+            retryable_failures = {
+                "timeout",
+                "tool_failure",
+                "malformed_result",
+                "incomplete_role_coverage",
+            }
+            expected_failures = (
+                {"context_overflow"}
+                if entry["state"] == "subdivision_required"
+                else retryable_failures
+            )
+            if entry["last_failure"] not in expected_failures:
+                raise ContractError(
+                    "review lifecycle state and failure reason are inconsistent"
+                )
+        lifecycle_roles[key] = entry
+    if set(lifecycle_roles) != set(assignments):
+        raise ContractError("review lifecycle must track every planned role")
+
+    ledger_records = {entry["record_id"]: entry for entry in ledger["records"]}
+    ledger_units = {entry["unit_id"]: entry for entry in ledger.get("units", [])}
+    if set(ledger_records) != set(graph["ownership"]) or set(ledger_units) != set(units):
+        raise ContractError("Coverage Ledger does not match the frozen Feature Graph")
+    for record_id, record_entry in ledger_records.items():
+        owner = graph["ownership"][record_id]
+        selected = owner in selected_unit_ids
+        if (
+            record_entry["primary_owner"] != owner
+            or record_entry.get("selected_for_review") is not selected
+        ):
+            raise ContractError(
+                "Coverage Ledger record ownership or selection does not match the plan"
+            )
+        if not selected and (
+            set(record_entry["role_status"].values()) != {"not_selected"}
+            or set(record_entry["attempts"].values()) != {0}
+            or record_entry["covered"]
+            or record_entry.get("uncovered_reason")
+            != "not_selected_by_partial_review"
+        ):
+            raise ContractError(
+                "Coverage Ledger unselected record must remain not_selected and uncovered"
+            )
+    for ledger_unit_id, unit_entry in ledger_units.items():
+        selected = ledger_unit_id in selected_unit_ids
+        if unit_entry.get("selected_for_review") is not selected:
+            raise ContractError(
+                "Coverage Ledger unit selection does not match the plan"
+            )
+        if not selected and (
+            set(unit_entry["role_status"].values()) != {"not_selected"}
+            or set(unit_entry["attempts"].values()) != {0}
+            or unit_entry["covered"]
+            or unit_entry.get("uncovered_reason")
+            != "not_selected_by_partial_review"
+        ):
+            raise ContractError(
+                "Coverage Ledger unselected unit must remain not_selected and uncovered"
+            )
+    if not unselected_record_ids <= set(ledger.get("uncovered_record_ids", [])):
+        raise ContractError(
+            "Coverage Ledger must retain every not_selected record in uncovered_record_ids"
+        )
+    if unselected_unit_ids and ledger["complete"]:
+        raise ContractError("a paired partial review can never claim complete coverage")
+    for key, role_entry in lifecycle_roles.items():
+        unit_id, role = key
+        if ledger_units[unit_id]["role_status"][role] != role_entry["state"]:
+            raise ContractError("Coverage Ledger unit role state does not match lifecycle")
+        if ledger_units[unit_id]["attempts"][role] != role_entry["attempts"]:
+            raise ContractError("Coverage Ledger unit attempts do not match lifecycle")
+        for record_id in units[unit_id]["changed_record_ids"]:
+            record_entry = ledger_records[record_id]
+            if (
+                record_entry["role_status"][role] != role_entry["state"]
+                or record_entry["attempts"][role] != role_entry["attempts"]
+            ):
+                raise ContractError(
+                    "Coverage Ledger record role state does not match lifecycle"
+                )
+    bundle["review_lifecycle"] = lifecycle
+    return bundle, scope, graph, plan, ledger
+
+
+def advance_review(raw_value: object) -> dict[str, Any]:
+    value = _require_object(raw_value, "review lifecycle input")
+    _require_fields(value, "review lifecycle input", {"bundle", "event"})
+    bundle, scope, graph, _plan, ledger = _lifecycle_bundle(value["bundle"])
+    event = _require_object(value["event"], "event")
+    _require_fields(event, "event", {"unit_id", "role", "task_id", "outcome"})
+    unit_id = _require_string(event["unit_id"], "event.unit_id")
+    role = _require_string(event["role"], "event.role")
+    task_id = _require_string(event["task_id"], "event.task_id")
+    if role not in ROLES:
+        raise ContractError("event.role is unsupported")
+    if event["outcome"] not in {
+        "result",
+        "timeout",
+        "tool_failure",
+        "context_overflow",
+    }:
+        raise ContractError("event.outcome is unsupported")
+
+    lifecycle = bundle["review_lifecycle"]
+    role_entries = [
+        entry
+        for entry in lifecycle["roles"]
+        if entry.get("unit_id") == unit_id and entry.get("role") == role
+    ]
+    if len(role_entries) != 1:
+        raise ContractError("event does not identify exactly one planned reviewer role")
+    role_entry = role_entries[0]
+    attempt = role_entry.get("attempts", 0) + 1
+    if (
+        role_entry.get("state") not in {"pending", "retry_pending"}
+        or attempt not in {1, 2}
+    ):
+        raise ContractError("reviewer role is not awaiting an allowed attempt")
+    envelopes = [
+        validate_contract("reviewer_task_envelope", envelope)
+        for envelope in bundle["reviewer_task_envelopes"]
+        if envelope.get("unit_id") == unit_id and envelope.get("role") == role
+    ]
+    if len(envelopes) != 1:
+        raise ContractError("event does not match one planned reviewer envelope")
+    expected_task_id = (
+        envelopes[0]["task_id"]
+        if attempt == 1
+        else _retry_task_id(envelopes[0]["task_id"])
+    )
+    if expected_task_id != task_id:
+        raise ContractError("event task_id does not match the planned reviewer task")
+
+    accepted_result: dict[str, Any] | None = None
+    failure_reason = event["outcome"]
+    if event["outcome"] == "result":
+        try:
+            if "reviewer_result" not in event:
+                raise ContractError("result event requires reviewer_result")
+            candidate_result = validate_contract(
+                "reviewer_result", event["reviewer_result"]
+            )
+            if (
+                candidate_result["task_id"] != task_id
+                or candidate_result["scope_id"] != scope["scope_id"]
+                or candidate_result["unit_id"] != unit_id
+                or candidate_result["role"] != role
+            ):
+                raise ContractError(
+                    "reviewer result identity does not match the frozen task"
+                )
+            owned_record_ids = set(
+                next(
+                    unit["changed_record_ids"]
+                    for unit in graph["review_units"]
+                    if unit["unit_id"] == unit_id
+                )
+            )
+            if (
+                candidate_result["status"] != "completed"
+                or set(candidate_result["inspected_record_ids"])
+                != owned_record_ids
+            ):
+                failure_reason = "incomplete_role_coverage"
+            else:
+                frozen_anchors = {
+                    json.dumps(
+                        record["anchor"], sort_keys=True, separators=(",", ":")
+                    )
+                    for record in scope["changed_records"]
+                    if record["record_id"] in owned_record_ids
+                }
+                if any(
+                    json.dumps(
+                        candidate["anchor"],
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    )
+                    not in frozen_anchors
+                    for candidate in candidate_result["candidate_findings"]
+                ):
+                    raise ContractError(
+                        "reviewer candidate anchor is outside frozen owned evidence"
+                    )
+                accepted_result = candidate_result
+        except (ContractError, KeyError, StopIteration, TypeError):
+            failure_reason = "malformed_result"
+
+    if accepted_result is not None:
+        role_entry["state"] = "completed"
+        role_entry["attempts"] = attempt
+        role_entry["last_failure"] = None
+        lifecycle["accepted_results"].append(accepted_result)
+        for collection in (ledger["records"], ledger.get("units", [])):
+            for entry in collection:
+                owns_event = (
+                    entry.get("primary_owner") == unit_id
+                    if "record_id" in entry
+                    else entry.get("unit_id") == unit_id
+                )
+                if not owns_event:
+                    continue
+                entry["role_status"][role] = "completed"
+                entry["attempts"][role] = attempt
+                entry["covered"] = all(
+                    entry["role_status"][required_role] == "completed"
+                    for required_role in ROLES
+                )
+                if entry["covered"]:
+                    entry["uncovered_reason"] = None
+        ledger["complete"] = bool(ledger["records"]) and all(
+            entry["covered"] for entry in ledger["records"]
+        ) and all(entry["covered"] for entry in ledger.get("units", []))
+        ledger["uncovered_record_ids"] = [
+            entry["record_id"] for entry in ledger["records"] if not entry["covered"]
+        ]
+        validate_contract("coverage_ledger", ledger)
+        candidates = [
+            {
+                "task_id": task_id,
+                "unit_id": unit_id,
+                "role": role,
+                "candidate": candidate,
+                "verification_status": "pending_main_agent",
+            }
+            for candidate in accepted_result["candidate_findings"]
+        ]
+        return {
+            "bundle": bundle,
+            "retry_task_envelope": None,
+            "candidate_findings": candidates,
+            "proposed_checks": [
+                {
+                    "task_id": task_id,
+                    "unit_id": unit_id,
+                    "role": role,
+                    "proposal": proposal,
+                    "screening_status": "pending_main_agent",
+                }
+                for proposal in accepted_result["proposed_checks"]
+            ],
+            "verification_gaps": [],
+        }
+
+    if event["outcome"] == "context_overflow":
+        role_entry["state"] = "subdivision_required"
+        role_entry["attempts"] = attempt
+        role_entry["last_failure"] = "context_overflow"
+        affected_record_ids = [
+            record_id
+            for record_id, owner in graph["ownership"].items()
+            if owner == unit_id
+        ]
+        for collection in (ledger["records"], ledger.get("units", [])):
+            for entry in collection:
+                owns_event = (
+                    entry.get("primary_owner") == unit_id
+                    if "record_id" in entry
+                    else entry.get("unit_id") == unit_id
+                )
+                if owns_event:
+                    entry["role_status"][role] = "subdivision_required"
+                    entry["attempts"][role] = attempt
+                    entry["covered"] = False
+                    entry["uncovered_reason"] = (
+                        "context_overflow_requires_subdivision"
+                    )
+        ledger["uncovered_record_ids"] = sorted(
+            set(ledger.get("uncovered_record_ids", [])) | set(affected_record_ids)
+        )
+        ledger["complete"] = False
+        validate_contract("coverage_ledger", ledger)
+        return {
+            "bundle": bundle,
+            "status": "repreflight_required",
+            "required_action": (
+                "subdivide_by_behavior_state_transition_or_contract"
+            ),
+            "retry_task_envelope": None,
+            "candidate_findings": [],
+            "proposed_checks": [],
+            "verification_gaps": [
+                {
+                    "kind": "context_overflow",
+                    "unit_id": unit_id,
+                    "role": role,
+                    "affected_record_ids": affected_record_ids,
+                }
+            ],
+        }
+
+    terminal = attempt == 2
+    role_entry["state"] = "incomplete" if terminal else "retry_pending"
+    role_entry["attempts"] = attempt
+    role_entry["last_failure"] = failure_reason
+    for collection in (ledger["records"], ledger.get("units", [])):
+        for entry in collection:
+            owns_event = (
+                entry.get("primary_owner") == unit_id
+                if "record_id" in entry
+                else entry.get("unit_id") == unit_id
+            )
+            if owns_event:
+                entry["role_status"][role] = role_entry["state"]
+                entry["attempts"][role] = attempt
+                entry["covered"] = False
+                if terminal:
+                    entry["uncovered_reason"] = "reviewer_role_failed"
+    ledger["complete"] = False
+    affected_record_ids = [
+        record_id
+        for record_id, owner in graph["ownership"].items()
+        if owner == unit_id
+    ]
+    if terminal:
+        ledger["uncovered_record_ids"] = sorted(
+            set(ledger.get("uncovered_record_ids", [])) | set(affected_record_ids)
+        )
+    validate_contract("coverage_ledger", ledger)
+
+    retry = None
+    if not terminal:
+        retry = {
+            field: copy.deepcopy(envelopes[0][field])
+            for field in (
+                "schema_version",
+                "task_id",
+                "scope_id",
+                "graph_revision",
+                "unit_id",
+                "role",
+                "role_mandate",
+                "changed_record_ids",
+                "context_record_ids",
+                "active_lenses",
+                "core_policy",
+                "output_contract",
+                "budget",
+            )
+            if field in envelopes[0]
+        }
+        retry["task_id"] = _retry_task_id(envelopes[0]["task_id"])
+        retry["attempt"] = 2
+        retry["fresh_context_required"] = True
+        retry["excluded_context"] = [
+            "paired_role_conclusions",
+            "previous_attempt_conclusions",
+        ]
+        validate_contract("reviewer_task_envelope", retry)
+    return {
+        "bundle": bundle,
+        "retry_task_envelope": retry,
+        "candidate_findings": [],
+        "proposed_checks": [],
+        "verification_gaps": (
+            [
+                {
+                    "kind": "reviewer_role_failed",
+                    "unit_id": unit_id,
+                    "role": role,
+                    "attempts": attempt,
+                    "affected_record_ids": affected_record_ids,
+                }
+            ]
+            if terminal
+            else []
+        ),
+    }
+
+
+def _scope_identity_payload(scope: dict[str, Any]) -> str:
+    return json.dumps(
+        {
+            "scope_id": scope["scope_id"],
+            "target": scope["target"],
+            "changed_records": scope["changed_records"],
+            "exclusions": scope["exclusions"],
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    )
+
+
+def scope_gate(raw_value: object) -> dict[str, Any]:
+    value = _require_object(raw_value, "scope gate input")
+    _require_fields(
+        value,
+        "scope gate input",
+        {"frozen_scope_manifest", "current_scope_manifest", "phase"},
+    )
+    frozen = validate_contract(
+        "scope_manifest", value["frozen_scope_manifest"]
+    )
+    current = validate_contract(
+        "scope_manifest", value["current_scope_manifest"]
+    )
+    if value["phase"] not in {"before_dispatch", "before_final_report"}:
+        raise ContractError("scope gate phase is unsupported")
+    if _scope_identity_payload(frozen) != _scope_identity_payload(current):
+        raise ContractError(
+            f"scope drift detected {value['phase']}; invalidate affected results and re-review the current snapshot"
+        )
+    return {
+        "status": "passed",
+        "phase": value["phase"],
+        "scope_id": frozen["scope_id"],
+    }
+
+
+def screen_validations(raw_value: object) -> dict[str, Any]:
+    value = _require_object(raw_value, "validation screening input")
+    _require_fields(
+        value, "validation screening input", {"proposals", "trusted_commands"}
+    )
+    raw_trusted = _require_array(value["trusted_commands"], "trusted_commands")
+    trusted_argv: set[tuple[str, ...]] = set()
+    for index, raw_command in enumerate(raw_trusted):
+        command = _require_object(raw_command, f"trusted_commands[{index}]")
+        _require_fields(
+            command, f"trusted_commands[{index}]", {"argv", "trust_source"}
+        )
+        argv = _require_string_array(
+            command["argv"], f"trusted_commands[{index}].argv", unique=False
+        )
+        if not argv:
+            raise ContractError(f"trusted_commands[{index}].argv cannot be empty")
+        if command["trust_source"] not in {
+            "base_revision",
+            "user_authorized",
+            "host_policy",
+        }:
+            raise ContractError(
+                f"trusted_commands[{index}].trust_source is not trusted"
+            )
+        trusted_argv.add(tuple(argv))
+
+    approved: list[dict[str, Any]] = []
+    rejected: list[dict[str, Any]] = []
+    seen_argv: set[tuple[str, ...]] = set()
+    for index, raw_proposal in enumerate(
+        _require_array(value["proposals"], "proposals")
+    ):
+        wrapper = _require_object(raw_proposal, f"proposals[{index}]")
+        proposal = (
+            _validate_proposed_check(
+                wrapper["proposal"], f"proposals[{index}].proposal"
+            )
+            if "proposal" in wrapper
+            else _validate_proposed_check(wrapper, f"proposals[{index}]")
+        )
+        argv_key = tuple(proposal["argv"])
+        reason: str | None = None
+        if argv_key in seen_argv:
+            reason = "duplicate"
+        else:
+            seen_argv.add(argv_key)
+            if proposal["requires_network"]:
+                reason = "network_not_authorized"
+            elif proposal["requires_credentials"]:
+                reason = "credentials_not_authorized"
+            elif proposal["writes_repository"]:
+                reason = "repository_write_not_authorized"
+            elif proposal["scope"] != "focused":
+                reason = "not_proportionate_or_focused"
+            elif argv_key not in trusted_argv:
+                reason = "command_not_from_trusted_source"
+        if reason is None:
+            approved.append(proposal)
+        else:
+            rejected.append(
+                {"proposal_id": proposal["proposal_id"], "reason": reason}
+            )
+    return {
+        "approved": approved,
+        "rejected": rejected,
+        "execution_authority": "main_agent_only",
+        "commands_executed": 0,
+    }
+
+
+def finalize_review(raw_value: object) -> dict[str, Any]:
+    value = _require_object(raw_value, "review finalization input")
+    _require_fields(
+        value,
+        "review finalization input",
+        {"bundle", "current_scope_manifest", "candidate_decisions"},
+    )
+    bundle, scope, graph, _plan, ledger = _lifecycle_bundle(value["bundle"])
+    current_scope = validate_contract(
+        "scope_manifest", value["current_scope_manifest"]
+    )
+    if _scope_identity_payload(current_scope) != _scope_identity_payload(scope):
+        raise ContractError(
+            "scope drift detected before final reporting; current evidence cannot be merged with frozen results"
+        )
+    lifecycle = bundle["review_lifecycle"]
+    if any(
+        entry.get("state") == "subdivision_required"
+        for entry in lifecycle["roles"]
+    ):
+        raise ContractError(
+            "context overflow requires behavioral subdivision and graph re-preflight before final reporting"
+        )
+    nonterminal = [
+        f"{entry.get('unit_id')}/{entry.get('role')}"
+        for entry in lifecycle["roles"]
+        if entry.get("state") in {"pending", "retry_pending"}
+    ]
+    if nonterminal:
+        raise ContractError(
+            "cannot finalize while reviewer roles remain pending: "
+            + ", ".join(sorted(nonterminal))
+        )
+
+    candidates: dict[tuple[str, str], dict[str, Any]] = {}
+    unresolved_questions: list[dict[str, Any]] = []
+    completed_role_entries = {
+        (entry.get("unit_id"), entry.get("role")): entry
+        for entry in lifecycle["roles"]
+        if entry.get("state") == "completed"
+    }
+    accepted_role_keys: set[tuple[str, str]] = set()
+    original_envelopes = {
+        (envelope.get("unit_id"), envelope.get("role")): envelope
+        for envelope in bundle["reviewer_task_envelopes"]
+    }
+    units_by_id = {unit["unit_id"]: unit for unit in graph["review_units"]}
+    for raw_result in lifecycle["accepted_results"]:
+        result = validate_contract("reviewer_result", raw_result)
+        role_key = (result["unit_id"], result["role"])
+        role_entry = completed_role_entries.get(role_key)
+        original_envelope = original_envelopes.get(role_key)
+        if role_key in accepted_role_keys or role_entry is None or original_envelope is None:
+            raise ContractError(
+                "accepted reviewer result does not match exactly one completed role"
+            )
+        expected_task_id = (
+            original_envelope["task_id"]
+            if role_entry.get("attempts") == 1
+            else _retry_task_id(original_envelope["task_id"])
+            if role_entry.get("attempts") == 2
+            else None
+        )
+        expected_records = set(units_by_id[result["unit_id"]]["changed_record_ids"])
+        frozen_owned_anchors = {
+            json.dumps(
+                record["anchor"],
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            for record in scope["changed_records"]
+            if record["record_id"] in expected_records
+        }
+        if (
+            result["status"] != "completed"
+            or result["scope_id"] != scope["scope_id"]
+            or result["task_id"] != expected_task_id
+            or set(result["inspected_record_ids"]) != expected_records
+        ):
+            raise ContractError(
+                "accepted reviewer result identity or owned coverage is inconsistent with the lifecycle"
+            )
+        if any(
+            json.dumps(
+                candidate["anchor"],
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            not in frozen_owned_anchors
+            for candidate in result["candidate_findings"]
+        ):
+            raise ContractError(
+                "accepted reviewer result candidate anchor is outside frozen owned evidence"
+            )
+        accepted_role_keys.add(role_key)
+        for assumption in result["unresolved_assumptions"]:
+            unresolved_questions.append(
+                {
+                    "kind": "unresolved_reviewer_assumption",
+                    "task_id": result["task_id"],
+                    "unit_id": result["unit_id"],
+                    "role": result["role"],
+                    "assumption": copy.deepcopy(assumption),
+                }
+            )
+        for candidate in result["candidate_findings"]:
+            key = (result["task_id"], candidate["finding_id"])
+            if key in candidates:
+                raise ContractError(
+                    "candidate finding IDs must be unique within a reviewer task"
+                )
+            candidates[key] = candidate
+    if accepted_role_keys != set(completed_role_entries):
+        raise ContractError(
+            "accepted reviewer results must match every completed lifecycle role"
+        )
+
+    raw_decisions = _require_array(
+        value["candidate_decisions"], "candidate_decisions"
+    )
+    decisions: dict[tuple[str, str], dict[str, Any]] = {}
+    for index, raw_decision in enumerate(raw_decisions):
+        decision = _require_object(raw_decision, f"candidate_decisions[{index}]")
+        _require_fields(
+            decision,
+            f"candidate_decisions[{index}]",
+            {
+                "task_id",
+                "finding_id",
+                "decision",
+                "reason",
+                "verification_evidence",
+                "factual_conflict",
+            },
+        )
+        key = (
+            _require_string(
+                decision["task_id"], f"candidate_decisions[{index}].task_id"
+            ),
+            _require_string(
+                decision["finding_id"],
+                f"candidate_decisions[{index}].finding_id",
+            ),
+        )
+        if key in decisions:
+            raise ContractError("candidate decisions must be unique")
+        if key not in candidates:
+            raise ContractError("candidate decision does not name an accepted candidate")
+        if decision["decision"] not in {
+            "verified_finding",
+            "rejected",
+            "question",
+            "verification_gap",
+        }:
+            raise ContractError(
+                f"candidate_decisions[{index}].decision is unsupported"
+            )
+        _require_string(
+            decision["reason"], f"candidate_decisions[{index}].reason"
+        )
+        evidence = _require_string_array(
+            decision["verification_evidence"],
+            f"candidate_decisions[{index}].verification_evidence",
+            unique=False,
+        )
+        if not isinstance(decision["factual_conflict"], bool):
+            raise ContractError(
+                f"candidate_decisions[{index}].factual_conflict must be a boolean"
+            )
+        if decision["factual_conflict"] and decision["decision"] not in {
+            "question",
+            "verification_gap",
+        }:
+            raise ContractError(
+                "an unresolved factual conflict must become a question or verification gap"
+            )
+        if decision["decision"] == "verified_finding" and not evidence:
+            raise ContractError(
+                "a verified finding requires independent main-agent verification evidence"
+            )
+        decisions[key] = decision
+    if set(decisions) != set(candidates):
+        raise ContractError("every accepted candidate requires one main-agent decision")
+
+    verified_findings: list[dict[str, Any]] = []
+    questions: list[dict[str, Any]] = unresolved_questions
+    verification_gaps: list[dict[str, Any]] = []
+    for key, candidate in candidates.items():
+        decision = decisions[key]
+        decided = {
+            **candidate,
+            "main_agent_reason": decision["reason"],
+            "verification_evidence": decision["verification_evidence"],
+        }
+        if decision["decision"] == "verified_finding":
+            verified_findings.append(decided)
+        elif decision["decision"] == "question":
+            questions.append(decided)
+        elif decision["decision"] == "verification_gap":
+            verification_gaps.append(decided)
+
+    for role_entry in lifecycle["roles"]:
+        if role_entry.get("state") in {"incomplete", "subdivision_required"}:
+            verification_gaps.append(
+                {
+                    "kind": "reviewer_role_incomplete",
+                    "unit_id": role_entry["unit_id"],
+                    "role": role_entry["role"],
+                    "attempts": role_entry["attempts"],
+                    "reason": role_entry["last_failure"],
+                }
+            )
+    return {
+        "verified_findings": verified_findings,
+        "questions": questions,
+        "verification_gaps": verification_gaps,
+        "coverage_ledger": ledger,
+        "reviewer_pair_status": "complete" if ledger["complete"] else "incomplete",
+        "scope_gate": "passed_before_final_report",
+    }
 
 
 def _read_stdin() -> object:
@@ -1472,8 +3166,28 @@ def _parser() -> argparse.ArgumentParser:
         help="accept current paired results for every selected Review Unit",
     )
     subparsers.add_parser(
+        "complete-legacy-graph",
+        help="explicitly accept all-success results for a legacy 2.0 Review Plan",
+    )
+    subparsers.add_parser(
         "complete-one-unit",
         help="accept exactly one successful isolated result for each planned role",
+    )
+    subparsers.add_parser(
+        "advance-review",
+        help="advance one reviewer role through its bounded failure lifecycle",
+    )
+    subparsers.add_parser(
+        "finalize-review",
+        help="adjudicate accepted candidates after the final scope-drift gate",
+    )
+    subparsers.add_parser(
+        "scope-gate",
+        help="reject scope drift before reviewer dispatch or final reporting",
+    )
+    subparsers.add_parser(
+        "screen-validations",
+        help="screen and deduplicate reviewer-proposed checks without executing them",
     )
     return parser
 
@@ -1492,6 +3206,16 @@ def main() -> int:
             output = build_graph(value)
         elif args.command == "complete-graph":
             output = complete_graph(value)
+        elif args.command == "complete-legacy-graph":
+            output = complete_graph(value, allow_legacy=True)
+        elif args.command == "advance-review":
+            output = advance_review(value)
+        elif args.command == "finalize-review":
+            output = finalize_review(value)
+        elif args.command == "scope-gate":
+            output = scope_gate(value)
+        elif args.command == "screen-validations":
+            output = screen_validations(value)
         else:
             output = complete_one_unit(value)
     except ContractError as exc:

@@ -91,8 +91,10 @@ contract boundaries. Do not dispatch the parent for a redundant pair.
 
 When changes affect authentication or authorization, trust boundaries, persistent data
 or migrations, concurrency or retries, public APIs or stored/wire contracts, or similarly
-broad failure domains, read [risk-review.md](references/risk-review.md). Do not load that
-heavier guidance for a trivial localized change.
+broad failure domains, read [risk-review.md](references/risk-review.md), add the applicable
+semantic risk evidence tags to the affected Review Units, and route those questions through
+the installed risk lenses. Do not load that heavier guidance or activate risk lenses for a
+trivial localized change.
 
 ## 3. Preflight and dispatch paired Review Units
 
@@ -101,6 +103,13 @@ build the ephemeral v2 bundle. Keep its Feature Graph, Review Plan, Reviewer Tas
 Envelopes, and pending Coverage Ledger in agent messages or process memory; never persist
 them in the reviewed repository. Preflight before dispatch and again whenever the graph
 grows.
+
+Read [resilience-and-lenses.md](references/resilience-and-lenses.md) before the first
+dispatch and whenever processing a reviewer outcome, snapshot drift, unavailable isolated
+agents, validation proposals, or language, framework, or risk lenses. Run the deterministic
+scope gate against a freshly resolved manifest immediately before dispatch. Activate only
+trusted lenses whose declared applicability matches frozen change evidence, and include
+their context cost in preflight. A lens cannot modify the immutable core policy.
 
 The standard profile permits six executable units and twelve required reviewer passes,
 with up to four active reviewer agents after reserving the main agent. Preserve at least
@@ -125,18 +134,34 @@ and do not reuse an agent that has seen one result as the counterpart. If two is
 contexts cannot be provided, do not claim paired coverage; report the capability and
 coverage gap.
 
+When isolated contexts are unavailable, stop at preflight. Offer a v1-compatible
+single-agent fallback only with explicit approval bound to the current scope and graph
+revision. The fallback emits no paired envelopes and its final independence and coverage
+remain degraded; unavailable capacity never silently changes the standard paired plan.
+
 Each reviewer returns a Reviewer Result containing inspected record IDs, candidate
-findings and evidence, proposed checks, and unresolved assumptions. A candidate is not
-a final finding. Reject malformed, wrong-snapshot, wrong-unit, wrong-role, or incomplete
-results. After all selected assignments return, use the graph-aware completion operation
-to bind every result to the current graph revision and advance the Coverage Ledger. A unit
-becomes covered only after one valid result from each role inspects every owned changed
-record. Unit-level pair state also gates context-only Integration Review Units.
+findings and evidence, structured proposed checks, and unresolved assumptions. A
+candidate is not a final finding. Process each outcome through the bounded lifecycle
+operation before it can change coverage or contribute content. Retry a timeout, tool
+failure, malformed result, or incomplete role once in a fresh isolated context; context
+overflow instead requires behavioral subdivision and re-preflight. A second failure marks
+that role and its owned records incomplete while unrelated units continue. Never dispatch
+a third reviewer by default.
+
+After all selected assignments reach a terminal state, a unit is covered only when one
+valid result from each role inspected every owned changed record. Unit-level pair state
+also gates context-only Integration Review Units. A surviving single-reviewer candidate
+can still pass independent main-agent verification, but it never makes the pair complete.
+Reviewer agreement is not required; unresolved factual conflict becomes a question or
+verification gap rather than a finding. Preserve accepted unresolved assumptions as
+questions with their task, Review Unit, and reviewer-role provenance.
 
 ## 4. Verify candidates through the evidence gate
 
-Follow only the evidence needed to adjudicate each candidate. Run a proposed check only
-after applying the command boundaries above. A failed trusted check is finding evidence
+Follow only the evidence needed to adjudicate each candidate. Screen and deduplicate
+proposed checks centrally against commands established from an unchanged trusted source,
+then run only proportionate focused checks after applying the command boundaries above.
+A failed trusted check is finding evidence
 when it proves the reviewed change breaks behavior or the build; environmental or
 inconclusive failures belong in verification gaps.
 
@@ -176,6 +201,11 @@ Severity reflects impact and reach:
 - **Low:** a localized defect with limited impact, never mere cleanup.
 
 ## 5. Report findings first
+
+Re-resolve the scope and pass the final scope gate before adjudication or reporting.
+Finalize every accepted candidate with an explicit main-agent decision and independent
+verification evidence for each finding. Scope drift invalidates affected results; never
+merge them with evidence from the new identity.
 
 Order findings by severity, then confidence. For each include severity, confidence, a
 concise title, the exact typed anchor, reachable scenario and impact, supporting code,

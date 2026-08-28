@@ -16,6 +16,7 @@ SKILL_PATH = SKILL_ROOT / "SKILL.md"
 RISK_PATH = SKILL_ROOT / "references" / "risk-review.md"
 SCOPE_PATH = SKILL_ROOT / "references" / "scope-resolution.md"
 CONTRACTS_PATH = SKILL_ROOT / "references" / "contracts-v2.md"
+RESILIENCE_PATH = SKILL_ROOT / "references" / "resilience-and-lenses.md"
 OPENAI_PATH = SKILL_ROOT / "agents" / "openai.yaml"
 EVAL_CASES_PATH = Path(__file__).with_name("eval_cases.json")
 MANIFEST_PATH = REPO_ROOT / ".claude-plugin" / "plugin.json"
@@ -72,9 +73,10 @@ class SkillContractTest(unittest.TestCase):
                 "references/risk-review.md",
                 "references/scope-resolution.md",
                 "references/contracts-v2.md",
+                "references/resilience-and-lenses.md",
             },
         )
-        for path in (RISK_PATH, SCOPE_PATH, CONTRACTS_PATH):
+        for path in (RISK_PATH, SCOPE_PATH, CONTRACTS_PATH, RESILIENCE_PATH):
             self.assertTrue(path.is_file())
 
     def test_plugin_registers_only_the_canonical_copy(self) -> None:

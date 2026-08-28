@@ -61,10 +61,15 @@ compatibility rather than calling every interface change breaking.
 
 ## Apply risk questions inside the required pair
 
-Route the applicable security/trust, data/migration, concurrency/reliability,
-contract/compatibility, and requirement/test questions through the Review Unit's exact
-two roles. Internal-behavior reviewers attack state, invariants, transitions, and error
-paths; external-contract reviewers attack trust propagation, consumers, persistence,
+After this inspection establishes a relevant risk, add `risk:security`, `risk:data`,
+`risk:concurrency`, or `risk:compatibility` to the affected Review Unit's semantic
+applicability evidence. The installed declarative lenses route only the matching questions
+through that unit's exact two roles. Read
+[resilience-and-lenses.md](resilience-and-lenses.md) for the lens IDs and immutable
+extension boundary.
+
+Internal-behavior reviewers attack state, invariants, transitions, and error paths;
+external-contract reviewers attack trust propagation, consumers, persistence,
 concurrency, compatibility, migration, and deployment. Do not create concern-specific
 lanes in addition to, or instead of, the required pair. Each role returns candidate
 findings with typed anchors, reachable scenarios, checked guards or callers, severity,
