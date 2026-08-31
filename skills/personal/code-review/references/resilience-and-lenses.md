@@ -25,6 +25,24 @@ identity-bearing target, changed records, anchors, and exclusions. A mismatch fa
 closed. Discard affected results, rebuild from the current snapshot, and never merge
 evidence from the two identities into a complete review.
 
+Repository snapshot traversal and content hashing are independently bounded. If any
+worktree-entry, Git-administrative-entry, or content-byte budget is exceeded, pause before
+dispatch with a `snapshot_budget_exceeded` verification gap, keep pair coverage
+incomplete, and rerun preflight. Worktree-entry and content-byte overflows return
+`reduce_snapshot_scope_and_retry`. A Git-administrative-entry overflow instead returns
+`compact_git_administration_or_approve_larger_limit_and_retry`, because reducing selected
+review content does not shrink Git's administrative tree. Local-scope untracked and
+excluded-path discovery shares the worktree-entry budget and prunes ignored, generated,
+and vendored roots into one exclusion before descending into their contents. Scope,
+worktree, and Git-administration scanners count each entry before stat or retention and
+stop at the first excess entry; they sort only the bounded admitted set. A nested path is
+pruned only when no-follow structural checks prove a canonical full, linked, or bare Git
+administration layout. False or symlinked `.git` markers remain traversable. Scope emits
+one `nested-repository` exclusion; snapshots omit inner-owned and untracked descendants
+while retaining any exact outer-index paths and prefixes below the boundary. Below that
+boundary, traversal uses only child names derived from the frozen staged index and
+no-follow relative operations; it does not scan inner sibling names.
+
 ## Bounded reviewer lifecycle
 
 Pass the current bundle and one event to `advance-review`. An event names the planned
@@ -34,11 +52,15 @@ unit, role, task ID, and one of `result`, `timeout`, `tool_failure`, or
 Lifecycle operations require the current `2.1` Review Plan and Reviewer Task Envelope
 profile. Older `2.0` bundles require the separately and explicitly invoked
 `complete-legacy-graph` all-success path; its output discloses that legacy mode.
+Every schema-bearing workflow contract requires canonical `major.minor` text. Noncanonical
+or over-10-digit components fail before integer conversion and cannot select a legacy
+minor profile, while canonical `2.0` compatibility remains available only through that
+explicit legacy completion command.
 
 The helper validates the result schema, frozen scope, task, graph, lens and canonical
-budget revisions, unit, role, complete owned-record inspection, and candidate anchors
-before accepting any candidate or proposed check. It also revalidates graph-bound partial
-review approval. The lifecycle is:
+budget revisions, unit, role, complete owned-record inspection, and every candidate's
+owned record ID plus same-record anchor before accepting any candidate or proposed check.
+It also revalidates graph-bound partial review approval. The lifecycle is:
 
 | Outcome | First attempt | Second attempt |
 | --- | --- | --- |
@@ -60,7 +82,8 @@ Unrelated units continue after a permanent role failure.
 A completed result from one role never completes its pair. Its candidate can still
 become a finding after independent main-agent verification. `finalize-review` requires
 one explicit decision for every accepted candidate. A `verified_finding` decision must
-include independent verification evidence. Reviewer agreement is not required, but a
+include structured independent verification evidence bound to frozen code, context,
+requirements, or approved validation results. Reviewer agreement is not required, but a
 decision marked as an unresolved factual conflict can only become a `question` or
 `verification_gap`. Accepted unresolved assumptions remain visible as questions with
 their task, Review Unit, and reviewer-role provenance. Do not resolve disagreement by
@@ -78,6 +101,14 @@ An approved fallback has `ready_degraded` status, emits no paired reviewer envel
 and marks independence and coverage as degraded. The Coverage Ledger remains incomplete.
 Repeat those limitations in the final report; never translate fallback completion into
 paired coverage.
+
+Fallback changes reviewer provenance, not the finding gate. Its completed result uses the
+same closed candidate schema, high-or-medium confidence rule, frozen record-ID and
+same-record typed-anchor binding, validation screening, verification-evidence binding, and
+main-agent adjudication and calibration as paired results. Malformed, low-confidence,
+out-of-scope, or unbound content fails closed and cannot appear in findings or Markdown.
+Fallback unresolved assumptions use the same closed shape and unique-ID rule as ordinary
+Reviewer Results; duplicate IDs fail before questions or Markdown are produced.
 
 ## Validation proposals
 

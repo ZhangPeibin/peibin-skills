@@ -109,7 +109,17 @@ dispatch and whenever processing a reviewer outcome, snapshot drift, unavailable
 agents, validation proposals, or language, framework, or risk lenses. Run the deterministic
 scope gate against a freshly resolved manifest immediately before dispatch. Activate only
 trusted lenses whose declared applicability matches frozen change evidence, and include
-their context cost in preflight. A lens cannot modify the immutable core policy.
+their context cost in preflight. Local-scope discovery and repository snapshots share the
+deterministic worktree-entry budget; a `snapshot_budget_exceeded` result pauses before any
+dispatch. Entry traversal is streaming: count each encountered entry before stat or
+retention and stop at the first entry beyond the limit. Treat a nested `.git` directory,
+gitfile, or bare root as a boundary only after its no-follow descriptors prove a canonical
+Git administration layout. Invalid, empty, or symlinked markers remain ordinary content.
+Prune inner-owned and untracked descendants, but preserve paths owned by the outer index by
+opening only their exact frozen-index child names and prefixes; never enumerate inner
+siblings. A Git-administration budget overflow needs administration compaction or explicit
+approval for a larger limit; worktree-entry and content-byte overflows need a smaller
+snapshot scope. A lens cannot modify the immutable core policy.
 
 The standard profile permits six executable units and twelve required reviewer passes,
 with up to four active reviewer agents after reserving the main agent. Preserve at least
@@ -146,7 +156,9 @@ operation before it can change coverage or contribute content. Retry a timeout, 
 failure, malformed result, or incomplete role once in a fresh isolated context; context
 overflow instead requires behavioral subdivision and re-preflight. A second failure marks
 that role and its owned records incomplete while unrelated units continue. Never dispatch
-a third reviewer by default.
+a third reviewer by default. Retain additive candidate-finding fields from later compatible
+minor profiles while continuing to validate every required known field. Reviewer Task
+Envelopes remain closed so extensions cannot inject reviewer-visible peer context.
 
 After all selected assignments reach a terminal state, a unit is covered only when one
 valid result from each role inspected every owned changed record. Unit-level pair state
@@ -180,6 +192,10 @@ Report a finding only when all of these are satisfied:
 5. **Material impact:** the issue affects correctness, security, data integrity,
    compatibility, performance, operability, or an evidenced requirement.
 
+In the final Markdown, identify each finding with its exact changed-record ID and retain
+the complete typed anchor fields, including old/new path, mode, and object fields when the
+anchor provides them. Do not collapse a non-text anchor to a display path alone.
+
 Use `high` confidence when failure follows directly from inspected code or a reproducing
 check, and `medium` when one explicit environmental assumption remains. Do not present
 low-confidence speculation as a finding. Use a question only when a missing product
@@ -208,8 +224,9 @@ verification evidence for each finding. Scope drift invalidates affected results
 merge them with evidence from the new identity.
 
 Order findings by severity, then confidence. For each include severity, confidence, a
-concise title, the exact typed anchor, reachable scenario and impact, supporting code,
-caller, test, or requirement evidence, and a focused correction direction.
+concise title, the exact changed-record identity and typed anchor, reachable scenario and
+impact, supporting code, caller, test, or requirement evidence, and a focused correction
+direction.
 
 If no issue passes the gate, say **No findings**. Do not invent one. Then include:
 

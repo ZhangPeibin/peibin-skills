@@ -15,6 +15,9 @@ from pathlib import Path
 SKILL_ROOT = Path(__file__).parents[1]
 SCOPE_CLI = SKILL_ROOT / "scripts" / "review_scope.py"
 CONTRACT_CLI = SKILL_ROOT / "scripts" / "review_contract.py"
+sys.path.insert(0, str(SKILL_ROOT / "scripts"))
+
+from review_scope import ScopeError, resolve_local, resolve_merge_base_target
 
 
 def _run(
@@ -304,12 +307,59 @@ class V2BaselineBehaviorTest(unittest.TestCase):
         exclusions = {item["path"]: item["reason"] for item in scope["exclusions"]}
         self.assertEqual(exclusions[".ENV.production"], "likely-secret")
         self.assertEqual(exclusions["ignored.log"], "ignored")
-        self.assertEqual(exclusions["vendor/copied.py"], "vendored")
-        self.assertEqual(exclusions["build/generated.js"], "generated")
+        self.assertEqual(exclusions["vendor"], "vendored")
+        self.assertEqual(exclusions["build"], "generated")
         self.assertEqual(exclusions["large.txt"], "oversized")
         self.assertEqual(exclusions["outside-link"], "special-or-symlink")
         self.assertEqual(exclusions["review.pipe"], "special-or-symlink")
         self.assertNotIn("do-not-read", result.stdout)
+
+    def test_public_scope_numeric_inputs_must_be_positive_in_cli_and_api(self) -> None:
+        cli_cases = (
+            (
+                "max-untracked-bytes",
+                [
+                    "local",
+                    "--repo",
+                    str(self.repo),
+                    "--max-untracked-bytes=-1",
+                ],
+            ),
+            (
+                "pull-request-number",
+                [
+                    "pr",
+                    "--repo",
+                    str(self.repo),
+                    "--number=0",
+                    "--base",
+                    "HEAD",
+                    "--head",
+                    "HEAD",
+                ],
+            ),
+        )
+        for name, arguments in cli_cases:
+            with self.subTest(surface="cli", name=name):
+                result = _run(sys.executable, str(SCOPE_CLI), *arguments)
+                self.assertEqual(result.returncode, 2)
+                self.assertEqual(result.stdout, "")
+                self.assertIn("positive integer", result.stderr)
+
+        with self.subTest(surface="api", name="max-untracked-bytes"):
+            with self.assertRaisesRegex(ScopeError, "positive integer"):
+                resolve_local(self.repo, 0)
+        with self.subTest(surface="api", name="pull-request-number"):
+            with self.assertRaisesRegex(ScopeError, "positive integer"):
+                resolve_merge_base_target(
+                    self.repo,
+                    kind="pull_request",
+                    source="pull_request",
+                    base="HEAD",
+                    head="HEAD",
+                    requested="PR #-1",
+                    extra_target={"pull_request_number": -1},
+                )
 
     def test_tracked_non_text_changes_use_typed_anchors_and_link_data(self) -> None:
         (self.repo / "binary.dat").write_bytes(b"old\0binary")
@@ -370,6 +420,36 @@ class V2BaselineBehaviorTest(unittest.TestCase):
         self.assertEqual(records["delete.txt"]["anchor"]["side"], "old")
         self.assertEqual(records["tracked-link"]["old_link_target"], "/outside/old-target")
         self.assertEqual(records["tracked-link"]["new_link_target"], "/outside/new-target")
+
+    def test_committed_symlink_targets_preserve_non_utf8_bytes(self) -> None:
+        link_path = os.fsencode(self.repo / "byte-link")
+        old_target = b"old-\xff-target"
+        new_target = b"new-\xfe-target"
+        os.symlink(old_target, link_path)
+        _git(self.repo, "add", "byte-link")
+        _git(self.repo, "commit", "-qm", "add byte-preserving link")
+        os.unlink(link_path)
+        os.symlink(new_target, link_path)
+        _git(self.repo, "add", "byte-link")
+
+        result = _run(
+            sys.executable, str(SCOPE_CLI), "local", "--repo", str(self.repo)
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        record = next(
+            item
+            for item in json.loads(result.stdout)["changed_records"]
+            if item["new_path"] == "byte-link"
+        )
+        self.assertEqual(
+            record["old_link_target"].encode("utf-8", "surrogateescape"),
+            old_target,
+        )
+        self.assertEqual(
+            record["new_link_target"].encode("utf-8", "surrogateescape"),
+            new_target,
+        )
 
     def test_unstaged_mode_only_change_is_not_given_a_line_anchor(self) -> None:
         script = self.repo / "run.sh"
@@ -499,7 +579,7 @@ class V2BaselineBehaviorTest(unittest.TestCase):
         self.assertEqual(scope["target"]["base_oid"], empty_tree)
         self.assertEqual(len(scope["target"]["head_oid"]), 64)
 
-    def test_git_inspection_disables_lazy_fetch_and_terminal_credentials(self) -> None:
+    def test_git_inspection_does_not_execute_ambient_path_wrapper(self) -> None:
         real_git = shutil.which("git")
         self.assertIsNotNone(real_git)
         wrapper_temp = tempfile.TemporaryDirectory()
@@ -528,9 +608,7 @@ class V2BaselineBehaviorTest(unittest.TestCase):
         )
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        invocations = log_path.read_text(encoding="utf-8").splitlines()
-        self.assertTrue(invocations)
-        self.assertEqual(set(invocations), {"1:0:0"})
+        self.assertFalse(log_path.exists())
 
     def test_scope_never_executes_external_diff_or_textconv(self) -> None:
         helper_temp = tempfile.TemporaryDirectory()
@@ -805,6 +883,7 @@ class V2BaselineBehaviorTest(unittest.TestCase):
             for entry in incomplete["coverage_ledger"]["records"]
             if entry["record_id"] == kept_id
         ]
+        incomplete["coverage_ledger"]["uncovered_record_ids"] = [kept_id]
         for envelope in incomplete["reviewer_task_envelopes"]:
             envelope["changed_record_ids"] = [kept_id]
         incomplete_results = [
@@ -864,6 +943,7 @@ class V2BaselineBehaviorTest(unittest.TestCase):
             {
                 "finding_id": "finding-unrelated",
                 "title": "Unrelated anchor",
+                "changed_record_id": envelope["changed_record_ids"][0],
                 "anchor": {
                     "kind": "line",
                     "side": "new",
@@ -901,6 +981,7 @@ class V2BaselineBehaviorTest(unittest.TestCase):
                 {
                     "finding_id": "finding-1",
                     "title": "Broken",
+                    "changed_record_id": "record-1",
                     "anchor": "file.py:1",
                     "changed_scope_causality": 123,
                     "reachable_scenario": "reachable",

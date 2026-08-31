@@ -9,11 +9,15 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 SKILL_ROOT = Path(__file__).parents[1]
 CONTRACT_CLI = SKILL_ROOT / "scripts" / "review_contract.py"
 SCOPE_CLI = SKILL_ROOT / "scripts" / "review_scope.py"
+sys.path.insert(0, str(SKILL_ROOT / "scripts"))
+
+import review_scope
 
 
 def _run_contract(command: str, payload: object) -> subprocess.CompletedProcess[str]:
@@ -376,42 +380,21 @@ class V2FeatureGraphOrchestrationTest(unittest.TestCase):
             self.assertEqual(json.loads(configured.stdout), json.loads(baseline.stdout))
 
     def test_canonical_patch_declares_all_output_indicators(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            repo = Path(temp_dir) / "repo"
-            repo.mkdir()
-            _init_repo(repo, "configured.txt", "before\n")
-            (repo / "configured.txt").write_text("after\n", encoding="utf-8")
-            real_git = shutil.which("git")
-            self.assertIsNotNone(real_git)
-            bin_dir = Path(temp_dir) / "bin"
-            bin_dir.mkdir()
-            wrapper = bin_dir / "git"
-            wrapper.write_text(
-                "#!/usr/bin/env python3\n"
-                "import subprocess\n"
-                "import sys\n"
-                f"real_git = {real_git!r}\n"
-                "args = sys.argv[1:]\n"
-                "required = {\n"
-                "        '--output-indicator-new=+',\n"
-                "        '--output-indicator-old=-',\n"
-                "        '--output-indicator-context= ',\n"
-                "}\n"
-                "if 'diff' in args and '--patch' in args:\n"
-                "    if not required <= set(args):\n"
-                "        print('canonical output indicators missing', file=sys.stderr)\n"
-                "        raise SystemExit(97)\n"
-                "args = [arg for arg in args if arg not in required]\n"
-                "raise SystemExit(subprocess.run([real_git, *args]).returncode)\n",
-                encoding="utf-8",
+        with mock.patch.object(
+            review_scope,
+            "_output_indicator_options",
+            return_value=list(review_scope.OUTPUT_INDICATOR_OPTIONS),
+        ), mock.patch.object(review_scope, "_git", return_value=b"") as git:
+            review_scope._diff_bytes(
+                Path("/trusted/repository"),
+                [],
+                ["configured.txt"],
+                patch=True,
             )
-            wrapper.chmod(0o755)
-            environment = os.environ.copy()
-            environment["PATH"] = f"{bin_dir}{os.pathsep}{environment['PATH']}"
 
-            result = _resolve_local(repo, env=environment)
-
-            self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(
+            set(review_scope.OUTPUT_INDICATOR_OPTIONS).issubset(git.call_args.args)
+        )
 
     def test_hunk_records_ignore_ambient_rename_limit(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

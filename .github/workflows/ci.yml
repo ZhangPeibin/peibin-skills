@@ -20,14 +20,10 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
         with:
-          python-version: "3.12"
-          cache: pip
-
-      - name: Install development dependencies
-        run: python -m pip install -r requirements-dev.txt
+          enable-cache: true
 
       - name: Run repository checks
-        run: make check
+        run: uv run --isolated --no-project --no-config --no-env-file --with PyYAML==6.0.2 -- python3 -I skills/personal/code-review/scripts/run_release_check.py

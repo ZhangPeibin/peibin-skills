@@ -138,14 +138,29 @@ The installer may create or update `skills-lock.json` in the consuming project; 
 
 ## Development
 
-Install the validation dependency once, then run the same checks used by CI:
+Run the same isolated checks used by CI:
 
 ```bash
-make install-dev
-make check
+uv run --isolated --no-project --no-config --no-env-file --with PyYAML==6.0.2 -- python3 -I skills/personal/code-review/scripts/run_release_check.py
 ```
 
-`make check` validates plugin registration, Skill metadata, local documentation links, workflow assets, and every personal Skill test suite.
+The launcher validates plugin registration, Skill metadata, local documentation links,
+workflow assets, every personal Skill test suite, and the code-review release gate. A
+direct `make check` intentionally fails because it cannot sanitize inherited Make options
+before GNU Make parses them. The standard check and the bundled code-review scope and
+workflow CLIs require a POSIX runtime and fail closed before repository inspection on
+unsupported platforms. The launcher also revalidates its original Python entrypoint and
+resolved executable target before and after every repository-check phase. Absolute Python
+paths containing spaces remain supported because the launcher passes the path as a quoted
+environment value rather than Make path syntax.
+The whitespace-path regression derives its copied interpreter from the isolated launcher's
+`sys.executable`, so ambient `PATH` cannot select a different Python. When the required
+staged `tests/independent_agent_evaluation.json` is intentionally absent, this exact
+command's only failure must be that independent-evidence boundary, never interpreter
+selection or whitespace-path handling.
+The code-review probes also freeze canonical contract `major.minor` parsing, structurally
+validated nested Git boundaries with outer-index ownership preserved, and streaming entry
+budgets that stop before an over-limit directory can be materialized.
 
 ## Repository Layout
 

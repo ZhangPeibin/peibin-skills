@@ -138,14 +138,26 @@ installer 可能在消费项目中创建或更新 `skills-lock.json`；本源码
 
 ## 开发与验证
 
-首次安装验证依赖，然后运行与 CI 完全相同的检查：
+运行与 CI 完全相同的隔离检查：
 
 ```bash
-make install-dev
-make check
+uv run --isolated --no-project --no-config --no-env-file --with PyYAML==6.0.2 -- python3 -I skills/personal/code-review/scripts/run_release_check.py
 ```
 
-`make check` 会检查插件注册、Skill metadata、本地文档链接、workflow 资产，以及所有 personal Skill 测试。
+launcher 会检查插件注册、Skill metadata、本地文档链接、workflow 资产、所有 personal
+Skill 测试，以及 code-review release gate。直接运行 `make check` 会主动失败，因为 GNU
+Make 在解析 Makefile 前就可能处理继承的 Make 选项，仓库内的 Makefile 无法先行清洗它们。
+标准检查以及 code-review 内置的 scope 和 workflow CLI 仅支持 POSIX runtime；在不支持的
+平台上，它们会在检查仓库前 fail closed。launcher 还会在每个仓库检查阶段的前后重新验证
+原始 Python entrypoint 及其解析后的 executable target。Python 的绝对路径即使包含空格也受
+支持，因为 launcher 会把它作为正确引用的环境变量传递，而不是交给 Make 按路径列表解析。
+空格路径回归测试从隔离 launcher 的 `sys.executable` 创建解释器副本，不通过环境 `PATH`
+选择另一个 Python。若有意不提供已暂存的
+`tests/independent_agent_evaluation.json`，上述精确命令必须只因缺少独立评估证据而失败，
+不能因解释器选择或空格路径处理失败。
+code-review probes 还会冻结以下行为：contract 版本必须是 canonical `major.minor`，嵌套
+Git 边界必须通过结构验证且保留外层 index 的 ownership，以及 entry budget 必须流式执行，
+不能先完整物化超限目录再报错。
 
 ## 仓库结构
 

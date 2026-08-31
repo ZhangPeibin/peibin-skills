@@ -172,6 +172,7 @@ def _candidate(finding_id: str = "finding-service") -> dict[str, object]:
     return {
         "finding_id": finding_id,
         "title": "Changed service rejects a reachable request",
+        "changed_record_id": "record-service",
         "anchor": {
             "kind": "line",
             "side": "new",
@@ -194,6 +195,213 @@ def _stable_id(prefix: str, *parts: str) -> str:
 
 
 class V2ReviewerLifecycleBehaviorTest(unittest.TestCase):
+    def test_contract_schema_versions_require_canonical_major_minor(self) -> None:
+        bundle = _bundle()
+        envelope = bundle["reviewer_task_envelopes"][0]
+        contracts = {
+            "scope_manifest": bundle["scope_manifest"],
+            "feature_graph": bundle["feature_graph"],
+            "review_plan": bundle["review_plan"],
+            "reviewer_task_envelope": envelope,
+            "reviewer_result": _reviewer_result(envelope),
+            "coverage_ledger": bundle["coverage_ledger"],
+        }
+        malformed_versions = (
+            "",
+            "2",
+            "2.",
+            ".0",
+            "-2.0",
+            "2.-1",
+            "2.minor",
+            "2.0.0",
+            "02.0",
+            "2.00",
+        )
+        for kind, contract in contracts.items():
+            for version in malformed_versions:
+                with self.subTest(kind=kind, version=version):
+                    invalid = json.loads(json.dumps(contract))
+                    invalid["schema_version"] = version
+                    result = _run_contract(
+                        f"validate --kind {kind}", invalid
+                    )
+                    self.assertEqual(result.returncode, 2)
+                    self.assertIn("schema_version", result.stderr)
+
+            unsupported = json.loads(json.dumps(contract))
+            unsupported["schema_version"] = "3.0"
+            result = _run_contract(f"validate --kind {kind}", unsupported)
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("unsupported", result.stderr)
+
+        stripped_envelope = json.loads(json.dumps(envelope))
+        stripped_envelope["schema_version"] = "2"
+        for field in (
+            "graph_revision",
+            "role_mandate",
+            "context_record_ids",
+            "active_lenses",
+            "budget",
+            "attempt",
+        ):
+            stripped_envelope.pop(field)
+        downgrade = _run_contract(
+            "validate --kind reviewer_task_envelope", stripped_envelope
+        )
+        self.assertEqual(downgrade.returncode, 2)
+        self.assertIn("schema_version", downgrade.stderr)
+
+    def test_contract_schema_version_components_are_bounded(self) -> None:
+        bundle = _bundle()
+        envelope = bundle["reviewer_task_envelopes"][0]
+        contracts = {
+            "scope_manifest": bundle["scope_manifest"],
+            "feature_graph": bundle["feature_graph"],
+            "review_plan": bundle["review_plan"],
+            "reviewer_task_envelope": envelope,
+            "reviewer_result": _reviewer_result(envelope),
+            "coverage_ledger": bundle["coverage_ledger"],
+        }
+        oversized = "9" * 10_000
+        versions = {
+            "major": f"{oversized}.0",
+            "minor": f"2.{oversized}",
+        }
+        for kind, contract in contracts.items():
+            for component, version in versions.items():
+                with self.subTest(kind=kind, component=component):
+                    invalid = json.loads(json.dumps(contract))
+                    invalid["schema_version"] = version
+                    result = _run_contract(f"validate --kind {kind}", invalid)
+                    self.assertEqual(result.returncode, 2)
+                    self.assertIn("schema_version", result.stderr)
+                    self.assertNotIn("Traceback", result.stderr)
+
+    def test_reviewer_result_preserves_additive_candidate_fields(self) -> None:
+        envelope = _bundle()["reviewer_task_envelopes"][0]
+        candidate = {
+            **_candidate(),
+            "future_optional_evidence": {
+                "source": "next-minor-reviewer",
+                "retained": True,
+            },
+        }
+        reviewer_result = _reviewer_result(
+            envelope, candidate_findings=[candidate]
+        )
+
+        result = _run_contract(
+            "validate --kind reviewer_result", reviewer_result
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        validated = json.loads(result.stdout)
+        self.assertEqual(
+            validated["candidate_findings"][0]["future_optional_evidence"],
+            {"source": "next-minor-reviewer", "retained": True},
+        )
+
+    def test_candidate_record_id_prevents_same_anchor_cross_record_reuse(self) -> None:
+        scope = _scope()
+        scope["changed_records"][0].update(
+            {"record_id": "record-staged", "source": "staged"}
+        )
+        scope["changed_records"].append(
+            {
+                **scope["changed_records"][0],
+                "record_id": "record-unstaged",
+                "source": "unstaged",
+            }
+        )
+        graph = _graph()
+        graph["features"][0]["review_unit_ids"] = ["unit-staged"]
+        graph["review_units"][0].update(
+            {
+                "unit_id": "unit-staged",
+                "changed_record_ids": ["record-staged"],
+            }
+        )
+        graph["features"].append(
+            {
+                "feature_id": "feature-unstaged",
+                "name": "Unstaged service behavior",
+                "purpose": "Review the later unstaged service edit",
+                "review_unit_ids": ["unit-unstaged"],
+            }
+        )
+        graph["review_units"].append(
+            {
+                **graph["review_units"][0],
+                "unit_id": "unit-unstaged",
+                "feature_id": "feature-unstaged",
+                "changed_record_ids": ["record-unstaged"],
+            }
+        )
+        graph["ownership"] = {
+            "record-staged": "unit-staged",
+            "record-unstaged": "unit-unstaged",
+        }
+        built = _run_contract(
+            "build-graph",
+            {
+                "scope_manifest": scope,
+                "feature_graph": graph,
+                "environment": {
+                    "available_agent_slots": 4,
+                    "usable_context_tokens": 10_000,
+                },
+            },
+        )
+        self.assertEqual(built.returncode, 0, built.stderr)
+        bundle = json.loads(built.stdout)
+        envelope = next(
+            item
+            for item in bundle["reviewer_task_envelopes"]
+            if item["unit_id"] == "unit-staged"
+            and item["role"] == "internal_behavior"
+        )
+        self.assertEqual(
+            scope["changed_records"][0]["anchor"],
+            scope["changed_records"][1]["anchor"],
+        )
+
+        scenarios = (
+            ("missing", None, False),
+            ("cross-record", "record-unstaged", False),
+            ("owned-record", "record-staged", True),
+        )
+        for name, changed_record_id, should_complete in scenarios:
+            with self.subTest(name=name):
+                candidate = _candidate(f"finding-{name}")
+                candidate.pop("changed_record_id", None)
+                if changed_record_id is not None:
+                    candidate["changed_record_id"] = changed_record_id
+                advanced = _run_contract(
+                    "advance-review",
+                    {
+                        "bundle": bundle,
+                        "event": {
+                            "unit_id": envelope["unit_id"],
+                            "role": envelope["role"],
+                            "task_id": envelope["task_id"],
+                            "outcome": "result",
+                            "reviewer_result": _reviewer_result(
+                                envelope, candidate_findings=[candidate]
+                            ),
+                        },
+                    },
+                )
+                self.assertEqual(advanced.returncode, 0, advanced.stderr)
+                output = json.loads(advanced.stdout)
+                role = next(
+                    entry
+                    for entry in output["bundle"]["review_lifecycle"]["roles"]
+                    if entry["unit_id"] == envelope["unit_id"]
+                    and entry["role"] == envelope["role"]
+                )
+                self.assertEqual(role["state"] == "completed", should_complete)
+
     def test_timeout_gets_one_fresh_isolated_retry_without_pair_completion(self) -> None:
         bundle = _bundle()
         envelope = next(
@@ -352,11 +560,13 @@ class V2ReviewerLifecycleBehaviorTest(unittest.TestCase):
                         entry["role_status"]["internal_behavior"] = state
                         entry["attempts"]["internal_behavior"] = attempts
                         entry["uncovered_reason"] = (
-                            "reviewer_role_failed" if state == "incomplete" else None
+                            "reviewer_role_failed"
+                            if state == "incomplete"
+                            else "review_pending"
                         )
-                invalid_bundle["coverage_ledger"]["uncovered_record_ids"] = (
-                    ["record-service"] if state == "incomplete" else []
-                )
+                invalid_bundle["coverage_ledger"]["uncovered_record_ids"] = [
+                    "record-service"
+                ]
                 external = next(
                     envelope
                     for envelope in invalid_bundle["reviewer_task_envelopes"]
@@ -723,6 +933,33 @@ class V2ReviewerLifecycleBehaviorTest(unittest.TestCase):
             accepted_output["bundle"]["coverage_ledger"]["records"][0]["covered"]
         )
 
+        invalid_record_calibration = _run_contract(
+            "finalize-review",
+            {
+                "bundle": accepted_output["bundle"],
+                "current_scope_manifest": _scope(),
+                "candidate_decisions": [
+                    {
+                        "task_id": survivor["task_id"],
+                        "finding_id": "finding-service",
+                        "decision": "verified_finding",
+                        "reason": "Attempt to move the finding to another record",
+                        "verification_evidence": [
+                            {
+                                "kind": "code",
+                                "changed_record_id": "record-service",
+                                "detail": "Inspected the frozen changed branch",
+                            }
+                        ],
+                        "factual_conflict": False,
+                        "calibration": {"changed_record_id": "record-forged"},
+                    }
+                ],
+            },
+        )
+        self.assertEqual(invalid_record_calibration.returncode, 2)
+        self.assertIn("calibration", invalid_record_calibration.stderr)
+
         finalized = _run_contract(
             "finalize-review",
             {
@@ -735,7 +972,11 @@ class V2ReviewerLifecycleBehaviorTest(unittest.TestCase):
                         "decision": "verified_finding",
                         "reason": "The caller reaches the changed branch",
                         "verification_evidence": [
-                            "Inspected the caller and reproduced the failing branch"
+                            {
+                                "kind": "code",
+                                "changed_record_id": "record-service",
+                                "detail": "Inspected the frozen changed branch",
+                            }
                         ],
                         "factual_conflict": False,
                     }
@@ -979,7 +1220,13 @@ class V2ReviewerLifecycleBehaviorTest(unittest.TestCase):
                         "finding_id": "finding-internal_behavior",
                         "decision": "verified_finding",
                         "reason": "The reviewers disagree about the guard",
-                        "verification_evidence": ["The guard evidence is contradictory"],
+                        "verification_evidence": [
+                            {
+                                "kind": "code",
+                                "changed_record_id": "record-service",
+                                "detail": "The frozen guard evidence is contradictory",
+                            }
+                        ],
                         "factual_conflict": True,
                     },
                     {
@@ -1033,7 +1280,12 @@ class V2ReviewerLifecycleBehaviorTest(unittest.TestCase):
         assumption_task: dict[str, object] | None = None
         for envelope in bundle["reviewer_task_envelopes"]:
             assumptions = (
-                ["The production caller may still send a legacy null payload"]
+                [
+                    {
+                        "assumption_id": "legacy-null-payload",
+                        "text": "The production caller may still send a legacy null payload",
+                    }
+                ]
                 if envelope["role"] == "external_contract"
                 else []
             )
@@ -1076,7 +1328,10 @@ class V2ReviewerLifecycleBehaviorTest(unittest.TestCase):
                     "task_id": assumption_task["task_id"],
                     "unit_id": assumption_task["unit_id"],
                     "role": assumption_task["role"],
-                    "assumption": "The production caller may still send a legacy null payload",
+                    "assumption": {
+                        "assumption_id": "legacy-null-payload",
+                        "text": "The production caller may still send a legacy null payload",
+                    },
                 }
             ],
         )
@@ -1118,6 +1373,54 @@ class V2ScopeAndFallbackBehaviorTest(unittest.TestCase):
                         "status": "passed",
                     },
                 )
+
+    def test_scope_gate_binds_every_frozen_evidence_source(self) -> None:
+        frozen = _scope()
+        frozen["trusted_requirement_sources"] = [
+            {
+                "source_id": "issue-42",
+                "kind": "issue",
+                "reference": "42",
+                "summary": "Preserve the prior-token invalidation",
+            }
+        ]
+        frozen["candidate_validation_commands"] = [
+            {"argv": ["python3", "-m", "unittest"], "trust_source": "base_revision"}
+        ]
+        frozen["frozen_context_records"] = [
+            {
+                "context_record_id": "context:caller",
+                "source": "frozen_revision",
+                "revision": "a" * 40,
+                "path": "caller.py",
+                "mode": "100644",
+                "blob_oid": "b" * 40,
+                "content_identity": "sha256:" + "c" * 64,
+            }
+        ]
+        variants = []
+        for field in (
+            "trusted_requirement_sources",
+            "candidate_validation_commands",
+            "frozen_context_records",
+        ):
+            current = json.loads(json.dumps(frozen))
+            current[field] = []
+            variants.append((field, current))
+
+        for field, current in variants:
+            with self.subTest(field=field):
+                result = _run_contract(
+                    "scope-gate",
+                    {
+                        "frozen_scope_manifest": frozen,
+                        "current_scope_manifest": current,
+                        "phase": "before_final_report",
+                    },
+                )
+
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("scope drift", result.stderr)
 
     def test_single_agent_fallback_requires_explicit_revision_bound_approval(self) -> None:
         request = {
@@ -1223,7 +1526,11 @@ class V2ScopeAndFallbackBehaviorTest(unittest.TestCase):
             }
             entry["covered"] = True
             entry["uncovered_reason"] = None
-        bundle["coverage_ledger"]["uncovered_record_ids"] = []
+        bundle["coverage_ledger"]["uncovered_record_ids"] = [
+            entry["record_id"]
+            for entry in bundle["coverage_ledger"]["records"]
+            if not entry["covered"]
+        ]
         envelope = bundle["reviewer_task_envelopes"][0]
 
         advanced = _run_contract(
@@ -1327,6 +1634,9 @@ class V2ValidationProposalBehaviorTest(unittest.TestCase):
                     {
                         "argv": focused["argv"],
                         "trust_source": "base_revision",
+                        "requires_network": False,
+                        "requires_credentials": False,
+                        "writes_repository": False,
                     }
                 ],
             },
@@ -1577,6 +1887,7 @@ class V2DeclarativeLensBehaviorTest(unittest.TestCase):
         invalid_lenses = [
             ({**valid_lens, "trust_source": "repository"}, "repository-provided"),
             ({**valid_lens, "version": "2.0"}, "unsupported"),
+            ({**valid_lens, "version": "1.not-semver"}, "invalid"),
             ({**valid_lens, "reviewer_count": 1}, "immutable core policy"),
             ({**valid_lens, "commands": [["make", "check"]]}, "immutable core policy"),
             ({**valid_lens, "provider": "external"}, "immutable core policy"),

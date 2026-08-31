@@ -17,12 +17,16 @@ RISK_PATH = SKILL_ROOT / "references" / "risk-review.md"
 SCOPE_PATH = SKILL_ROOT / "references" / "scope-resolution.md"
 CONTRACTS_PATH = SKILL_ROOT / "references" / "contracts-v2.md"
 RESILIENCE_PATH = SKILL_ROOT / "references" / "resilience-and-lenses.md"
+QUALITY_GATES_PATH = SKILL_ROOT / "references" / "quality-gates.md"
 OPENAI_PATH = SKILL_ROOT / "agents" / "openai.yaml"
 EVAL_CASES_PATH = Path(__file__).with_name("eval_cases.json")
 MANIFEST_PATH = REPO_ROOT / ".claude-plugin" / "plugin.json"
 README_PATH = REPO_ROOT / "README.md"
 README_ZH_PATH = REPO_ROOT / "README.zh-CN.md"
 REPO_VALIDATOR_PATH = REPO_ROOT / "scripts" / "validate_repo.py"
+MAKEFILE_PATH = REPO_ROOT / "Makefile"
+CI_PATH = REPO_ROOT / ".github" / "workflows" / "ci.yml"
+CHECK_LAUNCHER_PATH = SKILL_ROOT / "scripts" / "run_release_check.py"
 CANONICAL_PATH = "skills/personal/code-review"
 VENDOR_PATH = "skills/vendor/mattpocock/engineering/code-review"
 
@@ -78,6 +82,8 @@ class SkillContractTest(unittest.TestCase):
         )
         for path in (RISK_PATH, SCOPE_PATH, CONTRACTS_PATH, RESILIENCE_PATH):
             self.assertTrue(path.is_file())
+        self.assertTrue(QUALITY_GATES_PATH.is_file())
+        self.assertIn("quality-gates.md", CONTRACTS_PATH.read_text(encoding="utf-8"))
 
     def test_plugin_registers_only_the_canonical_copy(self) -> None:
         manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
@@ -142,14 +148,14 @@ class SkillContractTest(unittest.TestCase):
         self.assertIn("vendor 版本仅作为参考源码", readme_zh)
 
     def test_eval_catalog_schema_and_independent_evaluation_coverage(self) -> None:
-        """Validate reusable inputs only; this test does not execute their behavior."""
+        """Validate the reusable executable-input catalog contract."""
         payload = json.loads(EVAL_CASES_PATH.read_text(encoding="utf-8"))
         self.assertEqual(set(payload), {"version", "skill", "purpose", "cases"})
-        self.assertEqual(payload["version"], 1)
+        self.assertEqual(payload["version"], 2)
         self.assertEqual(payload["skill"], "code-review")
         self.assertEqual(
             payload["purpose"],
-            "Reusable unevaluated inputs for independent behavioral evaluation.",
+            "Executable v1 compatibility inputs for controlled behavioral evaluation.",
         )
         cases = payload["cases"]
         case_ids = [case["id"] for case in cases]
@@ -176,17 +182,129 @@ class SkillContractTest(unittest.TestCase):
         for case in cases:
             self.assertEqual(
                 set(case),
-                {"id", "request", "context", "expected", "forbidden", "covers"},
+                {
+                    "id",
+                    "request",
+                    "context",
+                    "expected",
+                    "forbidden",
+                    "covers",
+                    "executable",
+                },
             )
+            self.assertEqual(case["executable"], {"enabled": True})
             self.assertTrue(case["request"])
-            self.assertTrue(case["context"])
+            self.assertGreaterEqual(len(case["context"]), 2)
+            self.assertTrue(all(isinstance(fact, str) and fact for fact in case["context"][:-1]))
+            self.assertEqual(set(case["context"][-1]), {"fixture"})
+            self.assertEqual(case["context"][-1]["fixture"]["kind"], case["id"])
+            controlled_inputs = case["context"][-1]["fixture"]["controlled_inputs"]
+            self.assertEqual(
+                set(controlled_inputs),
+                {
+                    "candidate_findings",
+                    "candidate_decisions",
+                    "proposed_checks",
+                    "validation_results",
+                    "safety_attempts",
+                    "context_paths",
+                    "trusted_requirement_sources",
+                    "trusted_validation_commands",
+                },
+            )
+            self.assertEqual(
+                set(case["expected"]),
+                {"decisions", "report", "observations", "bindings"},
+            )
+            self.assertEqual(
+                set(case["forbidden"]), {"behaviors", "observations", "bindings"}
+            )
             self.assertTrue(case["expected"]["decisions"])
             self.assertTrue(case["expected"]["report"])
             self.assertTrue(case["forbidden"]["behaviors"])
+            for observation in (
+                case["expected"]["observations"]
+                + case["forbidden"]["observations"]
+            ):
+                self.assertEqual(
+                    set(observation), {"source", "path", "operator", "value"}
+                )
+                self.assertIn(observation["source"], {"process", "output", "fixture"})
+                self.assertIn(
+                    observation["operator"],
+                    {"equals", "contains", "contains_subset"},
+                )
+            self.assertEqual(
+                set(case["expected"]["bindings"]), {"decisions", "report"}
+            )
+            self.assertEqual(
+                set(case["forbidden"]["bindings"]), {"behaviors"}
+            )
+            for section, statement_key in (
+                (case["expected"], "decisions"),
+                (case["expected"], "report"),
+                (case["forbidden"], "behaviors"),
+            ):
+                bindings = section["bindings"][statement_key]
+                self.assertEqual(len(bindings), len(section[statement_key]))
+                self.assertTrue(all(binding for binding in bindings))
+                self.assertTrue(
+                    all(
+                        isinstance(index, int)
+                        and not isinstance(index, bool)
+                        and 0 <= index < len(section["observations"])
+                        for binding in bindings
+                        for index in binding
+                    )
+                )
+            for section in (case["expected"], case["forbidden"]):
+                self.assertEqual(
+                    {
+                        index
+                        for bindings in section["bindings"].values()
+                        for binding in bindings
+                        for index in binding
+                    },
+                    set(range(len(section["observations"]))),
+                )
             self.assertTrue(case["covers"])
             self.assertTrue(set(case["covers"]) <= required_coverage)
             observed.update(case["covers"])
         self.assertEqual(observed, required_coverage)
+
+    def test_standard_check_runs_the_bound_independent_release_gate(self) -> None:
+        makefile = MAKEFILE_PATH.read_text(encoding="utf-8")
+        quality_gates = QUALITY_GATES_PATH.read_text(encoding="utf-8")
+        readme = README_PATH.read_text(encoding="utf-8")
+        standard_command = (
+            "uv run --isolated --no-project --no-config --no-env-file "
+            "--with PyYAML==6.0.2 -- python3 -I "
+            "skills/personal/code-review/scripts/run_release_check.py"
+        )
+        self.assertIn(standard_command, quality_gates)
+        self.assertIn(standard_command, readme)
+        self.assertIn("POSIX", quality_gates)
+        self.assertIn("POSIX", readme)
+        self.assertNotIn("uv run --with PyYAML==6.0.2 make check", quality_gates)
+        ci = yaml.safe_load(CI_PATH.read_text(encoding="utf-8"))
+        steps = ci["jobs"]["check"]["steps"]
+        uses = [step["uses"] for step in steps if "uses" in step]
+        run_commands = [step["run"] for step in steps if "run" in step]
+        self.assertTrue(any(value.startswith("astral-sh/setup-uv@") for value in uses))
+        self.assertIn(standard_command, run_commands)
+        self.assertNotIn("make check", run_commands)
+        self.assertTrue(CHECK_LAUNCHER_PATH.is_file())
+        launcher = CHECK_LAUNCHER_PATH.read_text(encoding="utf-8")
+        for variable in ("MAKEFLAGS", "MFLAGS", "GNUMAKEFLAGS", "MAKEFILES"):
+            self.assertIn(f'"{variable}"', launcher)
+            self.assertIn(f'`{variable}`', quality_gates)
+        self.assertIn(
+            "check: check-environment check-interpreter validate test release-gate",
+            makefile,
+        )
+        self.assertIn("checks require the documented release-check launcher", makefile)
+        self.assertIn("review_workflow.py grade", makefile)
+        self.assertIn("review_workflow.py gate", makefile)
 
 
 if __name__ == "__main__":

@@ -1,10 +1,15 @@
 # V2 Contracts: Feature Graph Orchestration
 
 Use this reference after scope resolution when constructing, preflighting, or dispatching
-the Feature Graph. All records are JSON-compatible and use schema major version `2`.
-Missing required fields and another major version fail validation. Additive fields are
-retained or ignored safely except in Reviewer Task Envelopes, whose reviewer-visible
-fields are closed to preserve isolation.
+the Feature Graph. All six schema-bearing contracts are JSON-compatible and require a
+canonical `major.minor` string: `scope_manifest`, `feature_graph`, `review_plan`,
+`reviewer_task_envelope`, `reviewer_result`, and `coverage_ledger`. Decimal components have
+no signs or leading zeroes except the single digit `0`, and each component is limited to
+10 digits before integer conversion. Shortened, padded, patch-level, or oversized forms
+fail validation with a controlled contract error. The supported major is `2`; compatible
+future minor profiles within that bound remain valid. Missing required fields and another
+major version also fail validation. Additive fields are retained or ignored safely except
+in Reviewer Task Envelopes, whose reviewer-visible fields are closed to preserve isolation.
 
 Current `build-graph` output uses minor profile `2.1` for Review Plans and Reviewer Task
 Envelopes. That profile requires resilience, lens, mandate, and canonical-budget fields;
@@ -29,6 +34,10 @@ python3 scripts/review_contract.py finalize-review
 python3 scripts/review_contract.py validate --kind lens
 ```
 
+For the executable regression harness and independently derived release grade, read
+[quality-gates.md](quality-gates.md). These evaluator-only commands exercise the public
+workflow without invoking providers or writing artifacts into reviewed repositories.
+
 `build-one-unit` and `complete-one-unit` preserve the localized v2 baseline. For a semantic
 graph, pass `scope_manifest`, `feature_graph`, and `environment` to `build-graph`. Optional
 `budget_decision` records an explicit user choice. Optional `previous_review_plan` forces a
@@ -42,8 +51,8 @@ candidate adjudication, and the declarative lens schema, read
 ## Contract ownership
 
 - **Scope Manifest:** frozen target identity, immutable base/head or local fingerprint,
-  typed changed records, exclusions, trusted requirement sources, and proposed validation
-  commands.
+  typed changed records, optional unchanged context records frozen from an immutable
+  revision, exclusions, trusted requirement sources, and proposed validation commands.
 - **Feature Graph:** logical Features, executable Feature and Integration Review Units,
   material edges, parent-child relationships, and exactly one primary owner for every
   changed record. Context-only records do not alter ownership.
@@ -59,10 +68,18 @@ candidate adjudication, and the declarative lens schema, read
 - **Reviewer Result:** task, scope, unit, role, status, inspected record IDs, candidate
   findings, supporting evidence, proposed checks, and unresolved assumptions.
 - **Coverage Ledger:** every record's primary owner plus record- and unit-level role states,
-  attempts, and covered status. A record and its owning unit are covered only when both
-  roles have valid completed results. Context-only Integration Review Units remain visible
-  at unit level; the ledger is complete only when every record and executable unit is
-  covered.
+  attempts, covered status, and an explicit reason for every uncovered entry. A record and
+  its owning unit are covered only when both roles have valid completed results. Covered
+  entries have no uncovered reason; `uncovered_record_ids` contains every uncovered record
+  exactly once. Context-only Integration Review Units remain visible at unit level; the
+  ledger is complete only when every record and executable unit is covered.
+
+Current Coverage Ledgers always include unit rows. Every record owner names one of those
+units, and each role's state and attempt count are one bounded invariant: pending,
+degraded, and not-selected states have zero attempts; retry-pending has one; completed has
+one or two; incomplete has two; and no current role exceeds two attempts. Graph completion
+and lifecycle entry points additionally require the ledger's unit set to equal the frozen
+executable graph exactly.
 
 ## Semantic graph input
 
@@ -147,8 +164,8 @@ approval silently.
 Pass the frozen bundle and every selected Reviewer Result to `complete-graph`. The helper
 accepts only a ready or ready-partial plan whose graph fingerprint is still current. It
 recomputes revision-bound task IDs and verifies every assignment, envelope, owned and
-context record set, result role, completed status, inspected ownership, candidate anchor,
-and pending ledger entry before advancing coverage.
+context record set, result role, completed status, inspected ownership, candidate record
+identity and anchor, and pending ledger entry before advancing coverage.
 
 The explicitly invoked `complete-legacy-graph` path accepts an earlier `2.0` plan that
 predates lens, role-mandate, and canonical-budget fields and returns
@@ -160,6 +177,9 @@ them.
 A full plan completes only after both roles finish every executable unit. A paired partial
 review advances the selected units and their owned records while preserving every
 unselected record and unit as uncovered, so `coverage_ledger.complete` remains false.
+Before review, selected entries use `review_pending`; a paused preflight replaces the
+reason with `preflight_blocked:<reasons>`. Completion clears the reason only for entries
+whose two roles completed and recalculates `uncovered_record_ids` from actual coverage.
 Context-only Integration Review Units have no owned record rows, but their unit-level pair
 state still prevents a complete claim until both current-revision results are accepted.
 `complete-one-unit` remains the compatible localized entry point and applies the same
@@ -172,24 +192,51 @@ A successful reviewer returns `status: "completed"` and all owned record IDs in
 as owned coverage. Every candidate finding contains:
 
 - `finding_id` and concise `title`;
-- a line or typed change `anchor` from the Scope Manifest;
+- the owned `changed_record_id` plus that exact Scope Manifest record's line or typed
+  change `anchor`;
 - `changed_scope_causality`;
 - `reachable_scenario` and `impact`;
 - `checked_context`, including relevant guards, callers, tests, or types;
 - `severity` and `confidence`; and
 - `correction_direction`.
 
+These fields are required and their known values remain validated. A candidate may also
+carry additive fields from a compatible later minor profile; validation retains those
+fields so downstream consumers can use or ignore them safely. This forward-compatible
+rule does not apply to Reviewer Task Envelopes, whose closed reviewer-visible field set
+continues to reject unknown context.
+
+Only `high` and `medium` confidence candidates are contract-valid. A controlled result
+that attempts to return low-confidence speculation is rejected before candidate content is
+accepted; the lifecycle may issue its single fresh isolated retry, and the speculation must
+not appear in final findings or Markdown.
+
+The explicitly approved single-agent fallback uses this same candidate and evidence
+contract. It does not gain a weaker schema or finding path merely because its independence
+and Coverage Ledger remain degraded.
+
 Return an empty candidate array when nothing survives the reviewer's own scrutiny. Put
-uncertain product decisions in `unresolved_assumptions` and safe, focused structured argv
-records in `proposed_checks`; reviewers do not execute those checks independently.
+uncertain product decisions in `unresolved_assumptions` as closed
+`{assumption_id, text}` records and safe, focused structured argv records in
+`proposed_checks`; reviewers do not execute those checks independently. Assumption IDs
+must be unique within a result. Malformed assumptions consume the same bounded lifecycle
+retry as other malformed reviewer output and are never accepted for rendering.
 Finalization retains accepted unresolved assumptions as questions with task, unit, and
 reviewer-role provenance.
 
 Validate each result before accepting it. `complete-graph` additionally confirms that task,
 role, unit, scope ID, graph revision, and inspected ownership match the frozen plan and that
-both roles completed for every selected unit. Candidate anchors must exactly match an owned
-typed anchor from the frozen Scope Manifest. It returns candidates for main-agent
-adjudication, not final findings.
+both roles completed for every selected unit. Each candidate's `changed_record_id` must be
+owned by the unit, and its anchor must exactly match that same frozen Scope Manifest record;
+an equal anchor from a different staged, unstaged, or commit record is not interchangeable.
+It returns candidates for main-agent adjudication, not final findings.
+
+`finalize-review` accepts only closed structured main-agent evidence. A code item names one
+exact `changed_record_id` in the candidate role's inspected ownership; a context-code item
+names one exact `context_record_id`. Requirement items name a trusted frozen source, and
+validation items name an approved, actually run check with its expected status. Free-form
+evidence strings are never sufficient input; human-readable details are flattened only
+after record identities are bound.
 
 Use `complete-graph` as the current all-success path, and invoke
 `complete-legacy-graph` explicitly only for a pre-extension `2.0` bundle. Use
@@ -206,6 +253,31 @@ confidence, and discard unsupported claims. A single-reviewer candidate may beco
 finding after verification; reviewer consensus is not an evidence requirement. An
 unresolved factual conflict becomes a question or verification gap, never a finding.
 
-Do not serialize internal contracts into the user report. Report findings first, then a
-concise coverage summary derived from the ledger. A pending or invalid role, a mismatched
-scope ID, or any uncovered record must remain an explicit gap.
+A `verified_finding` decision may carry a `calibration` object that replaces any evidenced
+narrative or rating field: `title`, `changed_scope_causality`, `reachable_scenario`,
+`impact`, `checked_context`, `severity`, `confidence`, or `correction_direction`. It cannot
+replace finding identity, `changed_record_id`, or the frozen typed anchor. Calibration is
+invalid on rejected, question, or verification-gap decisions, and finalization validates
+severity, confidence, and non-empty text before applying it.
+
+When reachability depends on an unchanged caller, guard, test, or type, pass its normalized
+tracked path in `request.context_paths` before scope resolution. The workflow reads only the
+regular blob at the resolved immutable revision, records its blob OID and SHA-256 content
+identity in `frozen_context_records`, and binds those records into `scope_id`. Main-agent
+verification can cite one such record with `kind: context_code` and its exact
+`context_record_id`. A changed-record ID cannot stand in for unchanged caller or guard
+evidence; if the relevant context cannot be frozen, report a verification gap.
+Each frozen context record has the closed fields `context_record_id`, `source`, `revision`,
+`path`, `mode`, `blob_oid`, and `content_identity`; IDs are unique, paths are normalized,
+mode is regular, revisions and blob IDs are immutable Git OIDs, and content identities are
+SHA-256 digests.
+The before-dispatch and before-report scope gates compare the complete validated manifest,
+including frozen context, trusted requirement sources, and candidate validation commands;
+changing any evidence source invalidates prior reviewer results.
+
+Do not dump internal contracts into the user report. For each finding, retain the exact
+`changed_record_id` and render the complete typed anchor fields: line anchors include
+`kind`, `side`, `path`, and `line`; typed change anchors include every available
+`change_type`, `path`, `old_path`, `new_path`, `old_mode`, `new_mode`, `old_oid`, and
+`new_oid` field. Then provide a concise coverage summary derived from the ledger. A pending
+or invalid role, a mismatched scope ID, or any uncovered record must remain an explicit gap.

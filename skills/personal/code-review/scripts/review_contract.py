@@ -16,7 +16,24 @@ from typing import Any
 SCHEMA_VERSION = "2.0"
 RESILIENT_SCHEMA_VERSION = "2.1"
 SUPPORTED_MAJOR = 2
+SCHEMA_VERSION_COMPONENT_MAX_DIGITS = 10
+SCHEMA_VERSION_COMPONENT_PATTERN = (
+    rf"(?:0|[1-9][0-9]{{0,{SCHEMA_VERSION_COMPONENT_MAX_DIGITS - 1}}})"
+)
+SCHEMA_VERSION_RE = re.compile(
+    rf"^({SCHEMA_VERSION_COMPONENT_PATTERN})\.({SCHEMA_VERSION_COMPONENT_PATTERN})$"
+)
 ROLES = ("internal_behavior", "external_contract")
+ROLE_STATUS_ATTEMPTS = {
+    "pending": {0},
+    "retry_pending": {1},
+    "completed": {1, 2},
+    "failed": {1, 2},
+    "incomplete": {2},
+    "subdivision_required": {1, 2},
+    "degraded": {0},
+    "not_selected": {0},
+}
 CORE_POLICY = {
     "version": "2.0",
     "report_only": True,
@@ -34,6 +51,19 @@ CORE_POLICY = {
         "material_impact",
     ],
 }
+CANDIDATE_FINDING_FIELDS = {
+    "finding_id",
+    "title",
+    "changed_record_id",
+    "anchor",
+    "changed_scope_causality",
+    "reachable_scenario",
+    "impact",
+    "checked_context",
+    "severity",
+    "confidence",
+    "correction_direction",
+}
 STANDARD_PROFILE = {
     "max_executable_units": 6,
     "max_reviewer_passes": 12,
@@ -41,7 +71,10 @@ STANDARD_PROFILE = {
     "context_reserve_ratio": 0.30,
 }
 LENS_VERSION_MAJOR = 1
+LENS_VERSION_RE = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:\.(0|[1-9][0-9]*))?$")
 LENS_ID_RE = re.compile(r"^[a-z0-9][a-z0-9.-]*/[a-z0-9][a-z0-9.-]*$")
+GIT_OID_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+SHA256_IDENTITY_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
 def _risk_lens(lens_id: str, evidence_tag: str, question: str) -> dict[str, Any]:
@@ -161,6 +194,44 @@ def _validate_anchor(raw_value: object, name: str) -> dict[str, Any]:
     return anchor
 
 
+def validate_candidate_findings(
+    raw_value: object, name: str = "candidate_findings"
+) -> list[dict[str, Any]]:
+    findings = _require_array(raw_value, name)
+    finding_ids: list[str] = []
+    validated: list[dict[str, Any]] = []
+    for index, raw_finding in enumerate(findings):
+        finding_name = f"{name}[{index}]"
+        finding = _require_object(raw_finding, finding_name)
+        _require_fields(finding, finding_name, CANDIDATE_FINDING_FIELDS)
+        for field in CANDIDATE_FINDING_FIELDS - {"anchor"}:
+            _require_string(finding[field], f"{finding_name}.{field}")
+        finding_ids.append(finding["finding_id"])
+        _validate_anchor(finding["anchor"], f"{finding_name}.anchor")
+        if finding["severity"] not in {"critical", "high", "medium", "low"}:
+            raise ContractError(f"{finding_name}.severity is unsupported")
+        if finding["confidence"] not in {"high", "medium"}:
+            raise ContractError(f"{finding_name}.confidence is unsupported")
+        validated.append(copy.deepcopy(finding))
+    if len(finding_ids) != len(set(finding_ids)):
+        raise ContractError(f"{name} finding IDs must be unique")
+    return validated
+
+
+def _candidate_binds_owned_record(
+    candidate: dict[str, Any],
+    records_by_id: dict[str, dict[str, Any]],
+    owned_record_ids: set[str],
+) -> bool:
+    record_id = candidate["changed_record_id"]
+    record = records_by_id.get(record_id)
+    return (
+        record_id in owned_record_ids
+        and record is not None
+        and candidate["anchor"] == record["anchor"]
+    )
+
+
 def _validate_proposed_check(raw_value: object, name: str) -> dict[str, Any]:
     proposal = _require_object(raw_value, name)
     _require_fields(
@@ -187,6 +258,32 @@ def _validate_proposed_check(raw_value: object, name: str) -> dict[str, Any]:
         if not isinstance(proposal[field], bool):
             raise ContractError(f"{name}.{field} must be a boolean")
     return proposal
+
+
+def _validate_unresolved_assumptions(
+    raw_value: object, name: str
+) -> list[dict[str, Any]]:
+    assumptions = _require_array(raw_value, name)
+    validated: list[dict[str, Any]] = []
+    assumption_ids: list[str] = []
+    required = {"assumption_id", "text"}
+    for index, raw_assumption in enumerate(assumptions):
+        assumption_name = f"{name}[{index}]"
+        assumption = _require_object(raw_assumption, assumption_name)
+        _require_fields(assumption, assumption_name, required)
+        if set(assumption) != required:
+            raise ContractError(
+                f"{assumption_name} must contain only assumption_id and text"
+            )
+        assumption_id = _require_string(
+            assumption["assumption_id"], f"{assumption_name}.assumption_id"
+        )
+        _require_string(assumption["text"], f"{assumption_name}.text")
+        assumption_ids.append(assumption_id)
+        validated.append(copy.deepcopy(assumption))
+    if len(assumption_ids) != len(set(assumption_ids)):
+        raise ContractError(f"{name} assumption IDs must be unique")
+    return validated
 
 
 def _role_mandate(role: str) -> str:
@@ -232,10 +329,10 @@ def _validate_lens(raw_value: object, name: str) -> dict[str, Any]:
     if LENS_ID_RE.fullmatch(lens_id) is None:
         raise ContractError(f"{name}.lens_id must be namespaced as namespace/name")
     version = _require_string(lens["version"], f"{name}.version")
-    try:
-        major = int(version.split(".", 1)[0])
-    except ValueError as exc:
-        raise ContractError(f"{name}.version is invalid") from exc
+    version_match = LENS_VERSION_RE.fullmatch(version)
+    if version_match is None:
+        raise ContractError(f"{name}.version is invalid")
+    major = int(version_match.group(1))
     if major != LENS_VERSION_MAJOR:
         raise ContractError(
             f"{name}.version major {major} is unsupported; expected {LENS_VERSION_MAJOR}"
@@ -307,29 +404,31 @@ def _lens_applies(
     )
 
 
-def _validate_version(value: dict[str, Any], name: str) -> None:
-    version = value.get("schema_version")
-    if not isinstance(version, str):
-        raise ContractError(f"{name}.schema_version must be a string")
+def _parse_schema_version(value: object, name: str) -> tuple[int, int]:
+    if not isinstance(value, str):
+        raise ContractError(f"{name} must be a string")
+    match = SCHEMA_VERSION_RE.fullmatch(value)
+    if match is None:
+        raise ContractError(f"{name} is invalid")
     try:
-        major = int(version.split(".", 1)[0])
-    except ValueError as exc:
-        raise ContractError(f"{name}.schema_version is invalid: {version!r}") from exc
+        major, minor = (int(part) for part in match.groups())
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ContractError(f"{name} is invalid") from exc
     if major != SUPPORTED_MAJOR:
         raise ContractError(
-            f"{name}.schema_version major {major} is unsupported; expected {SUPPORTED_MAJOR}"
+            f"{name} major {major} is unsupported; expected {SUPPORTED_MAJOR}"
         )
+    return major, minor
+
+
+def _validate_version(value: dict[str, Any], name: str) -> None:
+    version = value.get("schema_version")
+    _parse_schema_version(version, f"{name}.schema_version")
 
 
 def _schema_minor(value: dict[str, Any]) -> int:
-    version = value["schema_version"]
-    parts = version.split(".", 1)
-    if len(parts) == 1:
-        return 0
-    try:
-        return int(parts[1])
-    except ValueError as exc:
-        raise ContractError(f"schema_version is invalid: {version!r}") from exc
+    _, minor = _parse_schema_version(value["schema_version"], "schema_version")
+    return minor
 
 
 def validate_contract(kind: str, raw_value: object) -> dict[str, Any]:
@@ -372,7 +471,14 @@ def validate_contract(kind: str, raw_value: object) -> dict[str, Any]:
             "proposed_checks",
             "unresolved_assumptions",
         },
-        "coverage_ledger": {"schema_version", "scope_id", "records", "complete"},
+        "coverage_ledger": {
+            "schema_version",
+            "scope_id",
+            "records",
+            "units",
+            "uncovered_record_ids",
+            "complete",
+        },
     }
     if kind not in required:
         raise ContractError(f"unknown contract kind: {kind}")
@@ -406,6 +512,71 @@ def validate_contract(kind: str, raw_value: object) -> dict[str, Any]:
             _validate_anchor(record["anchor"], f"changed_records[{index}].anchor")
         if len(record_ids) != len(set(record_ids)):
             raise ContractError("scope_manifest record_id values must be unique")
+        context_record_ids: list[str] = []
+        context_fields = {
+            "context_record_id",
+            "source",
+            "revision",
+            "path",
+            "mode",
+            "blob_oid",
+            "content_identity",
+        }
+        for index, raw_context in enumerate(
+            _require_array(
+                value.get("frozen_context_records", []),
+                "scope_manifest.frozen_context_records",
+            )
+        ):
+            context_name = f"scope_manifest.frozen_context_records[{index}]"
+            context = _require_object(raw_context, context_name)
+            _require_fields(context, context_name, context_fields)
+            if set(context) != context_fields:
+                raise ContractError(
+                    f"{context_name} must contain only the frozen context fields"
+                )
+            context_record_ids.append(
+                _require_string(
+                    context["context_record_id"],
+                    f"{context_name}.context_record_id",
+                )
+            )
+            if context["source"] != "frozen_revision":
+                raise ContractError(f"{context_name}.source is unsupported")
+            revision = _require_string(
+                context["revision"], f"{context_name}.revision"
+            )
+            blob_oid = _require_string(
+                context["blob_oid"], f"{context_name}.blob_oid"
+            )
+            if not GIT_OID_RE.fullmatch(revision):
+                raise ContractError(f"{context_name}.revision must be an immutable OID")
+            if not GIT_OID_RE.fullmatch(blob_oid):
+                raise ContractError(f"{context_name}.blob_oid must be an immutable OID")
+            path = _require_string(context["path"], f"{context_name}.path")
+            parts = path.split("/")
+            if (
+                path.startswith("/")
+                or "\\" in path
+                or not parts
+                or any(part in {"", ".", ".."} for part in parts)
+            ):
+                raise ContractError(
+                    f"{context_name}.path must be a normalized repository-relative path"
+                )
+            if context["mode"] not in {"100644", "100755"}:
+                raise ContractError(f"{context_name}.mode must be a regular file mode")
+            content_identity = _require_string(
+                context["content_identity"], f"{context_name}.content_identity"
+            )
+            if not SHA256_IDENTITY_RE.fullmatch(content_identity):
+                raise ContractError(
+                    f"{context_name}.content_identity must be a sha256 digest"
+                )
+        if len(context_record_ids) != len(set(context_record_ids)):
+            raise ContractError(
+                "scope_manifest frozen_context_records IDs must be unique"
+            )
     elif kind == "feature_graph":
         features = _require_array(value["features"], "feature_graph.features")
         feature_ids: set[str] = set()
@@ -840,9 +1011,6 @@ def validate_contract(kind: str, raw_value: object) -> dict[str, Any]:
                 raise ContractError(
                     f"reviewer_result.status is unsupported: {value['status']!r}"
                 )
-            findings = _require_array(
-                value["candidate_findings"], "reviewer_result.candidate_findings"
-            )
             _require_array(
                 value["supporting_evidence"], "reviewer_result.supporting_evidence"
             )
@@ -859,54 +1027,13 @@ def validate_contract(kind: str, raw_value: object) -> dict[str, Any]:
                 raise ContractError(
                     "reviewer_result proposed check IDs must be unique"
                 )
-            _require_array(
+            _validate_unresolved_assumptions(
                 value["unresolved_assumptions"],
                 "reviewer_result.unresolved_assumptions",
             )
-            finding_fields = {
-                "finding_id",
-                "title",
-                "anchor",
-                "changed_scope_causality",
-                "reachable_scenario",
-                "impact",
-                "checked_context",
-                "severity",
-                "confidence",
-                "correction_direction",
-            }
-            finding_ids: list[str] = []
-            for index, raw_finding in enumerate(findings):
-                finding = _require_object(
-                    raw_finding, f"reviewer_result.candidate_findings[{index}]"
-                )
-                _require_fields(
-                    finding,
-                    f"reviewer_result.candidate_findings[{index}]",
-                    finding_fields,
-                )
-                for field in finding_fields - {"anchor"}:
-                    _require_string(
-                        finding[field],
-                        f"reviewer_result.candidate_findings[{index}].{field}",
-                    )
-                finding_ids.append(finding["finding_id"])
-                _validate_anchor(
-                    finding["anchor"],
-                    f"reviewer_result.candidate_findings[{index}].anchor",
-                )
-                if finding["severity"] not in {"critical", "high", "medium", "low"}:
-                    raise ContractError(
-                        f"reviewer_result.candidate_findings[{index}].severity is unsupported"
-                    )
-                if finding["confidence"] not in {"high", "medium"}:
-                    raise ContractError(
-                        f"reviewer_result.candidate_findings[{index}].confidence is unsupported"
-                    )
-            if len(finding_ids) != len(set(finding_ids)):
-                raise ContractError(
-                    "reviewer_result candidate finding IDs must be unique"
-                )
+            validate_candidate_findings(
+                value["candidate_findings"], "reviewer_result.candidate_findings"
+            )
     elif kind == "coverage_ledger":
         if not isinstance(value["records"], list):
             raise ContractError("coverage_ledger.records must be an array")
@@ -916,7 +1043,14 @@ def validate_contract(kind: str, raw_value: object) -> dict[str, Any]:
             _require_fields(
                 entry,
                 f"coverage_ledger.records[{index}]",
-                {"record_id", "primary_owner", "role_status", "attempts", "covered"},
+                {
+                    "record_id",
+                    "primary_owner",
+                    "role_status",
+                    "attempts",
+                    "covered",
+                    "uncovered_reason",
+                },
             )
             role_status = _require_object(
                 entry["role_status"], f"coverage_ledger.records[{index}].role_status"
@@ -933,16 +1067,7 @@ def validate_contract(kind: str, raw_value: object) -> dict[str, Any]:
                 f"coverage_ledger.records[{index}].primary_owner",
             )
             for role in ROLES:
-                if role_status[role] not in {
-                    "pending",
-                    "retry_pending",
-                    "completed",
-                    "failed",
-                    "incomplete",
-                    "subdivision_required",
-                    "degraded",
-                    "not_selected",
-                }:
+                if role_status[role] not in ROLE_STATUS_ATTEMPTS:
                     raise ContractError(
                         f"coverage_ledger.records[{index}].role_status.{role} is unsupported"
                     )
@@ -962,6 +1087,10 @@ def validate_contract(kind: str, raw_value: object) -> dict[str, Any]:
                     raise ContractError(
                         f"coverage_ledger.records[{index}].attempts.{role} must be a non-negative integer"
                     )
+                if attempts[role] not in ROLE_STATUS_ATTEMPTS[role_status[role]]:
+                    raise ContractError(
+                        f"coverage_ledger.records[{index}].{role} state and attempts are inconsistent"
+                    )
             if not isinstance(entry["covered"], bool):
                 raise ContractError(
                     f"coverage_ledger.records[{index}].covered must be a boolean"
@@ -970,6 +1099,16 @@ def validate_contract(kind: str, raw_value: object) -> dict[str, Any]:
             if entry["covered"] != pair_completed:
                 raise ContractError(
                     f"coverage_ledger.records[{index}] cannot claim coverage until both roles complete"
+                )
+            if entry["covered"]:
+                if entry["uncovered_reason"] is not None:
+                    raise ContractError(
+                        f"coverage_ledger.records[{index}] covered records cannot retain an uncovered reason"
+                    )
+            else:
+                _require_string(
+                    entry["uncovered_reason"],
+                    f"coverage_ledger.records[{index}].uncovered_reason",
                 )
             record_ids.append(entry["record_id"])
         if len(record_ids) != len(set(record_ids)):
@@ -986,7 +1125,13 @@ def validate_contract(kind: str, raw_value: object) -> dict[str, Any]:
                 _require_fields(
                     entry,
                     f"coverage_ledger.units[{index}]",
-                    {"unit_id", "role_status", "attempts", "covered"},
+                    {
+                        "unit_id",
+                        "role_status",
+                        "attempts",
+                        "covered",
+                        "uncovered_reason",
+                    },
                 )
                 unit_ids.append(
                     _require_string(
@@ -1007,16 +1152,7 @@ def validate_contract(kind: str, raw_value: object) -> dict[str, Any]:
                         f"coverage_ledger.units[{index}] must track both roles"
                     )
                 for role in ROLES:
-                    if role_status[role] not in {
-                        "pending",
-                        "retry_pending",
-                        "completed",
-                        "failed",
-                        "incomplete",
-                        "subdivision_required",
-                        "degraded",
-                        "not_selected",
-                    }:
+                    if role_status[role] not in ROLE_STATUS_ATTEMPTS:
                         raise ContractError(
                             f"coverage_ledger.units[{index}].role_status.{role} is unsupported"
                         )
@@ -1027,6 +1163,10 @@ def validate_contract(kind: str, raw_value: object) -> dict[str, Any]:
                     ):
                         raise ContractError(
                             f"coverage_ledger.units[{index}].attempts.{role} must be a non-negative integer"
+                        )
+                    if attempts[role] not in ROLE_STATUS_ATTEMPTS[role_status[role]]:
+                        raise ContractError(
+                            f"coverage_ledger.units[{index}].{role} state and attempts are inconsistent"
                         )
                 if not isinstance(entry["covered"], bool):
                     raise ContractError(
@@ -1039,13 +1179,48 @@ def validate_contract(kind: str, raw_value: object) -> dict[str, Any]:
                     raise ContractError(
                         f"coverage_ledger.units[{index}] cannot claim coverage until both roles complete"
                     )
+                if entry["covered"]:
+                    if entry["uncovered_reason"] is not None:
+                        raise ContractError(
+                            f"coverage_ledger.units[{index}] covered units cannot retain an uncovered reason"
+                        )
+                else:
+                    _require_string(
+                        entry["uncovered_reason"],
+                        f"coverage_ledger.units[{index}].uncovered_reason",
+                    )
             if len(unit_ids) != len(set(unit_ids)):
                 raise ContractError("coverage_ledger unit_id values must be unique")
+            missing_owner_units = {
+                entry["primary_owner"] for entry in value["records"]
+            } - set(unit_ids)
+            if missing_owner_units:
+                raise ContractError(
+                    "coverage_ledger record owners must exist in coverage_ledger.units"
+                )
             all_units_covered = bool(units) and all(
                 entry["covered"] for entry in units
             )
         if not isinstance(value["complete"], bool):
             raise ContractError("coverage_ledger.complete must be a boolean")
+        uncovered_record_ids = _require_array(
+            value["uncovered_record_ids"],
+            "coverage_ledger.uncovered_record_ids",
+        )
+        for index, record_id in enumerate(uncovered_record_ids):
+            _require_string(
+                record_id, f"coverage_ledger.uncovered_record_ids[{index}]"
+            )
+        expected_uncovered_record_ids = {
+            entry["record_id"] for entry in value["records"] if not entry["covered"]
+        }
+        if (
+            len(uncovered_record_ids) != len(set(uncovered_record_ids))
+            or set(uncovered_record_ids) != expected_uncovered_record_ids
+        ):
+            raise ContractError(
+                "coverage_ledger uncovered record IDs must match every uncovered record exactly once"
+            )
         all_covered = all_units_covered and bool(value["records"]) and all(
             entry["covered"] for entry in value["records"]
         )
@@ -1625,6 +1800,9 @@ def _build_bundle(
         review_plan["preflight"]["degraded_fallback_requires_explicit_approval"] = True
     if not dispatch_ready:
         envelopes = []
+    preflight_blocked_reason = "preflight_blocked:" + ",".join(
+        blocking_reasons or ["dispatch_not_ready"]
+    )
     coverage_ledger = {
         "schema_version": SCHEMA_VERSION,
         "scope_id": scope_id,
@@ -1652,7 +1830,9 @@ def _build_bundle(
                 "uncovered_reason": (
                     "degraded_single_agent_fallback"
                     if degraded_ready
-                    else None
+                    else preflight_blocked_reason
+                    if not dispatch_ready
+                    else "review_pending"
                     if feature_graph["ownership"][record["record_id"]]
                     in selected_unit_id_set
                     else "not_selected_by_partial_review"
@@ -1679,18 +1859,18 @@ def _build_bundle(
                 "uncovered_reason": (
                     "degraded_single_agent_fallback"
                     if degraded_ready
-                    else None
+                    else preflight_blocked_reason
+                    if not dispatch_ready
+                    else "review_pending"
                     if unit["unit_id"] in selected_unit_id_set
                     else "not_selected_by_partial_review"
                 ),
             }
             for unit in graph_units
         ],
-        "uncovered_record_ids": (
-            [record["record_id"] for record in scope["changed_records"]]
-            if degraded_ready
-            else unselected_record_ids
-        ),
+        "uncovered_record_ids": [
+            record["record_id"] for record in scope["changed_records"]
+        ],
         "complete": False,
     }
 
@@ -2041,7 +2221,14 @@ def complete_graph(
             raise ContractError("Coverage Ledger must be pending before result completion")
         if entry.get("selected_for_review", selected) is not selected:
             raise ContractError("Coverage Ledger record selection does not match Review Plan")
-    if set(ledger.get("uncovered_record_ids", [])) != unselected_record_ids:
+        expected_reason = (
+            "review_pending" if selected else "not_selected_by_partial_review"
+        )
+        if entry.get("uncovered_reason") != expected_reason:
+            raise ContractError(
+                "Coverage Ledger record uncovered reason does not match Review Plan selection"
+            )
+    if set(ledger.get("uncovered_record_ids", [])) != scope_record_ids:
         raise ContractError("Coverage Ledger uncovered records do not match Review Plan")
     ledger_units = _require_array(ledger.get("units"), "coverage_ledger.units")
     ledger_by_unit = {entry["unit_id"]: entry for entry in ledger_units}
@@ -2056,6 +2243,13 @@ def complete_graph(
         selected = unit_id in selected_unit_ids
         if entry.get("selected_for_review", selected) is not selected:
             raise ContractError("Coverage Ledger unit selection does not match Review Plan")
+        expected_reason = (
+            "review_pending" if selected else "not_selected_by_partial_review"
+        )
+        if entry.get("uncovered_reason") != expected_reason:
+            raise ContractError(
+                "Coverage Ledger unit uncovered reason does not match Review Plan selection"
+            )
 
     raw_results = value["reviewer_results"]
     if not isinstance(raw_results, list):
@@ -2086,18 +2280,15 @@ def complete_graph(
             raise ContractError(
                 f"reviewer role {key[0]} {key[1]} did not inspect the complete owned scope"
             )
-        frozen_anchors = {
-            json.dumps(record["anchor"], sort_keys=True, separators=(",", ":"))
-            for record in scope["changed_records"]
-            if record["record_id"] in record_ids
+        records_by_id = {
+            record["record_id"]: record for record in scope["changed_records"]
         }
         for candidate in result["candidate_findings"]:
-            candidate_anchor = json.dumps(
-                candidate["anchor"], sort_keys=True, separators=(",", ":")
-            )
-            if candidate_anchor not in frozen_anchors:
+            if not _candidate_binds_owned_record(
+                candidate, records_by_id, record_ids
+            ):
                 raise ContractError(
-                    f"reviewer role {key[0]} {key[1]} candidate anchor is not in the frozen Scope Manifest owned evidence"
+                    f"reviewer role {key[0]} {key[1]} candidate record and anchor do not identify the same frozen Scope Manifest owned evidence"
                 )
         results[key] = result
     if set(results) != set(expected_assignments):
@@ -2112,12 +2303,19 @@ def complete_graph(
         entry["role_status"] = {role: "completed" for role in ROLES}
         entry["attempts"] = {role: 1 for role in ROLES}
         entry["covered"] = True
+        entry["uncovered_reason"] = None
     for entry in completed_ledger["units"]:
         if entry["unit_id"] not in selected_unit_ids:
             continue
         entry["role_status"] = {role: "completed" for role in ROLES}
         entry["attempts"] = {role: 1 for role in ROLES}
         entry["covered"] = True
+        entry["uncovered_reason"] = None
+    completed_ledger["uncovered_record_ids"] = [
+        entry["record_id"]
+        for entry in completed_ledger["records"]
+        if not entry["covered"]
+    ]
     completed_ledger["complete"] = all(
         entry["covered"] for entry in completed_ledger["records"]
     ) and all(entry["covered"] for entry in completed_ledger["units"])
@@ -2602,24 +2800,20 @@ def advance_review(raw_value: object) -> dict[str, Any]:
             ):
                 failure_reason = "incomplete_role_coverage"
             else:
-                frozen_anchors = {
-                    json.dumps(
-                        record["anchor"], sort_keys=True, separators=(",", ":")
-                    )
+                records_by_id = {
+                    record["record_id"]: record
                     for record in scope["changed_records"]
-                    if record["record_id"] in owned_record_ids
                 }
                 if any(
-                    json.dumps(
-                        candidate["anchor"],
-                        sort_keys=True,
-                        separators=(",", ":"),
+                    not _candidate_binds_owned_record(
+                        candidate,
+                        records_by_id,
+                        owned_record_ids,
                     )
-                    not in frozen_anchors
                     for candidate in candidate_result["candidate_findings"]
                 ):
                     raise ContractError(
-                        "reviewer candidate anchor is outside frozen owned evidence"
+                        "reviewer candidate record and anchor do not identify the same frozen Scope Manifest owned evidence"
                     )
                 accepted_result = candidate_result
         except (ContractError, KeyError, StopIteration, TypeError):
@@ -2809,12 +3003,7 @@ def advance_review(raw_value: object) -> dict[str, Any]:
 
 def _scope_identity_payload(scope: dict[str, Any]) -> str:
     return json.dumps(
-        {
-            "scope_id": scope["scope_id"],
-            "target": scope["target"],
-            "changed_records": scope["changed_records"],
-            "exclusions": scope["exclusions"],
-        },
+        scope,
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=True,
@@ -2853,12 +3042,23 @@ def screen_validations(raw_value: object) -> dict[str, Any]:
         value, "validation screening input", {"proposals", "trusted_commands"}
     )
     raw_trusted = _require_array(value["trusted_commands"], "trusted_commands")
-    trusted_argv: set[tuple[str, ...]] = set()
+    trusted_by_argv: dict[tuple[str, ...], dict[str, Any]] = {}
+    trusted_fields = {
+        "argv",
+        "trust_source",
+        "requires_network",
+        "requires_credentials",
+        "writes_repository",
+    }
     for index, raw_command in enumerate(raw_trusted):
         command = _require_object(raw_command, f"trusted_commands[{index}]")
         _require_fields(
-            command, f"trusted_commands[{index}]", {"argv", "trust_source"}
+            command, f"trusted_commands[{index}]", trusted_fields
         )
+        if set(command) != trusted_fields:
+            raise ContractError(
+                f"trusted_commands[{index}] must contain only authoritative command fields"
+            )
         argv = _require_string_array(
             command["argv"], f"trusted_commands[{index}].argv", unique=False
         )
@@ -2872,7 +3072,20 @@ def screen_validations(raw_value: object) -> dict[str, Any]:
             raise ContractError(
                 f"trusted_commands[{index}].trust_source is not trusted"
             )
-        trusted_argv.add(tuple(argv))
+        for field in (
+            "requires_network",
+            "requires_credentials",
+            "writes_repository",
+        ):
+            if not isinstance(command[field], bool):
+                raise ContractError(f"trusted_commands[{index}].{field} must be a boolean")
+        argv_key = tuple(argv)
+        normalized = copy.deepcopy(command)
+        if argv_key in trusted_by_argv and trusted_by_argv[argv_key] != normalized:
+            raise ContractError(
+                "trusted command argv cannot have conflicting authoritative metadata"
+            )
+        trusted_by_argv[argv_key] = normalized
 
     approved: list[dict[str, Any]] = []
     rejected: list[dict[str, Any]] = []
@@ -2889,23 +3102,33 @@ def screen_validations(raw_value: object) -> dict[str, Any]:
             else _validate_proposed_check(wrapper, f"proposals[{index}]")
         )
         argv_key = tuple(proposal["argv"])
+        trusted_command = trusted_by_argv.get(argv_key)
+        effective_effects = {
+            field: proposal[field]
+            or bool(trusted_command is not None and trusted_command[field])
+            for field in (
+                "requires_network",
+                "requires_credentials",
+                "writes_repository",
+            )
+        }
         reason: str | None = None
         if argv_key in seen_argv:
             reason = "duplicate"
         else:
             seen_argv.add(argv_key)
-            if proposal["requires_network"]:
+            if effective_effects["requires_network"]:
                 reason = "network_not_authorized"
-            elif proposal["requires_credentials"]:
+            elif effective_effects["requires_credentials"]:
                 reason = "credentials_not_authorized"
-            elif proposal["writes_repository"]:
+            elif effective_effects["writes_repository"]:
                 reason = "repository_write_not_authorized"
             elif proposal["scope"] != "focused":
                 reason = "not_proportionate_or_focused"
-            elif argv_key not in trusted_argv:
+            elif trusted_command is None:
                 reason = "command_not_from_trusted_source"
         if reason is None:
-            approved.append(proposal)
+            approved.append({**proposal, **effective_effects})
         else:
             rejected.append(
                 {"proposal_id": proposal["proposal_id"], "reason": reason}
@@ -2916,6 +3139,368 @@ def screen_validations(raw_value: object) -> dict[str, Any]:
         "execution_authority": "main_agent_only",
         "commands_executed": 0,
     }
+
+
+def adjudicate_candidates(
+    raw_candidates: object,
+    raw_decisions: object,
+    *,
+    evidence_bound: bool = False,
+) -> dict[str, list[dict[str, Any]]]:
+    candidates: dict[tuple[str, str], dict[str, Any]] = {}
+    for index, raw_candidate in enumerate(
+        _require_array(raw_candidates, "accepted_candidates")
+    ):
+        candidate = copy.deepcopy(
+            _require_object(raw_candidate, f"accepted_candidates[{index}]")
+        )
+        key = (
+            _require_string(
+                candidate.get("task_id"), f"accepted_candidates[{index}].task_id"
+            ),
+            _require_string(
+                candidate.get("finding_id"),
+                f"accepted_candidates[{index}].finding_id",
+            ),
+        )
+        if key in candidates:
+            raise ContractError(
+                "candidate finding IDs must be unique within a reviewer task"
+            )
+        candidates[key] = candidate
+
+    required_decision_fields = {
+        "task_id",
+        "finding_id",
+        "decision",
+        "reason",
+        "verification_evidence",
+        "factual_conflict",
+    }
+    decisions: dict[tuple[str, str], dict[str, Any]] = {}
+    for index, raw_decision in enumerate(
+        _require_array(raw_decisions, "candidate_decisions")
+    ):
+        decision_name = f"candidate_decisions[{index}]"
+        decision = copy.deepcopy(_require_object(raw_decision, decision_name))
+        _require_fields(decision, decision_name, required_decision_fields)
+        unsupported = sorted(
+            set(decision) - required_decision_fields - {"calibration"}
+        )
+        if unsupported:
+            raise ContractError(
+                f"{decision_name} has unsupported fields: {', '.join(unsupported)}"
+            )
+        key = (
+            _require_string(decision["task_id"], f"{decision_name}.task_id"),
+            _require_string(decision["finding_id"], f"{decision_name}.finding_id"),
+        )
+        if key in decisions:
+            raise ContractError("candidate decisions must be unique")
+        if key not in candidates:
+            raise ContractError("candidate decision does not name an accepted candidate")
+        if decision["decision"] not in {
+            "verified_finding",
+            "rejected",
+            "question",
+            "verification_gap",
+        }:
+            raise ContractError(f"{decision_name}.decision is unsupported")
+        _require_string(decision["reason"], f"{decision_name}.reason")
+        evidence = _require_string_array(
+            decision["verification_evidence"],
+            f"{decision_name}.verification_evidence",
+            unique=False,
+        )
+        if evidence and not evidence_bound:
+            raise ContractError(
+                "candidate verification_evidence must be structured and bound by the finalization evidence gate"
+            )
+        if not isinstance(decision["factual_conflict"], bool):
+            raise ContractError(f"{decision_name}.factual_conflict must be a boolean")
+        if decision["factual_conflict"] and decision["decision"] not in {
+            "question",
+            "verification_gap",
+        }:
+            raise ContractError(
+                "an unresolved factual conflict must become a question or verification gap"
+            )
+        if decision["decision"] == "verified_finding" and not evidence:
+            raise ContractError(
+                "a verified finding requires independent main-agent verification evidence"
+            )
+        calibration = decision.get("calibration", {})
+        if not isinstance(calibration, dict):
+            raise ContractError(f"{decision_name}.calibration must be an object")
+        allowed_calibration = CANDIDATE_FINDING_FIELDS - {
+            "finding_id",
+            "changed_record_id",
+            "anchor",
+        }
+        if set(calibration) - allowed_calibration:
+            raise ContractError(
+                f"{decision_name}.calibration contains unsupported fields"
+            )
+        if calibration and decision["decision"] != "verified_finding":
+            raise ContractError(
+                "finding calibration is allowed only for a verified finding"
+            )
+        for field in allowed_calibration - {"severity", "confidence"}:
+            if field in calibration:
+                _require_string(calibration[field], f"{decision_name}.calibration.{field}")
+        if "severity" in calibration and calibration["severity"] not in {
+            "critical",
+            "high",
+            "medium",
+            "low",
+        }:
+            raise ContractError(
+                f"{decision_name}.calibration.severity is unsupported"
+            )
+        if "confidence" in calibration and calibration["confidence"] not in {
+            "high",
+            "medium",
+        }:
+            raise ContractError(
+                f"{decision_name}.calibration.confidence is unsupported"
+            )
+        decisions[key] = decision
+    if set(decisions) != set(candidates):
+        raise ContractError("every accepted candidate requires one main-agent decision")
+
+    adjudicated = {
+        "verified_findings": [],
+        "questions": [],
+        "verification_gaps": [],
+    }
+    for key, candidate in candidates.items():
+        decision = decisions[key]
+        decided = {
+            **candidate,
+            **decision.get("calibration", {}),
+            "main_agent_reason": decision["reason"],
+            "verification_evidence": decision["verification_evidence"],
+        }
+        destination = {
+            "verified_finding": "verified_findings",
+            "question": "questions",
+            "verification_gap": "verification_gaps",
+        }.get(decision["decision"])
+        if destination is not None:
+            adjudicated[destination].append(decided)
+    return adjudicated
+
+
+def _record_path(record: dict[str, Any]) -> str | None:
+    return record.get("new_path") or record.get("old_path") or record["anchor"].get(
+        "path"
+    )
+
+
+def _select_one_frozen_record(
+    scope: dict[str, Any], raw_selector: object, name: str
+) -> str:
+    selector = _require_object(raw_selector, name)
+    allowed = {
+        "record_id",
+        "path",
+        "source",
+        "change_type",
+        "anchor_kind",
+        "side",
+        "line",
+    }
+    if not selector or set(selector) - allowed:
+        raise ContractError(f"{name} has unsupported or empty selectors")
+    matches: list[str] = []
+    for record in scope["changed_records"]:
+        anchor = record["anchor"]
+        fields = {
+            "record_id": record["record_id"],
+            "path": _record_path(record),
+            "source": record["source"],
+            "change_type": record["change_type"],
+            "anchor_kind": anchor["kind"],
+            "side": anchor.get("side"),
+            "line": anchor.get("line"),
+        }
+        if all(fields[key] == expected for key, expected in selector.items()):
+            matches.append(record["record_id"])
+    if len(matches) != 1:
+        raise ContractError(f"{name} must select exactly one frozen changed record")
+    return matches[0]
+
+
+def _bind_finalization_decisions(
+    bundle: dict[str, Any],
+    scope: dict[str, Any],
+    raw_decisions: object,
+    raw_validation_checks: object,
+) -> list[dict[str, Any]]:
+    contexts_by_task: dict[tuple[str, str], dict[str, Any]] = {}
+    contexts_by_role: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for result in bundle.get("review_lifecycle", {}).get("accepted_results", []):
+        for candidate in result["candidate_findings"]:
+            context = {
+                "task_id": result["task_id"],
+                "inspected_record_ids": set(result["inspected_record_ids"]),
+            }
+            task_key = (result["task_id"], candidate["finding_id"])
+            role_key = (
+                result["unit_id"],
+                result["role"],
+                candidate["finding_id"],
+            )
+            if task_key in contexts_by_task or role_key in contexts_by_role:
+                raise ContractError("accepted candidate identity is ambiguous")
+            contexts_by_task[task_key] = context
+            contexts_by_role[role_key] = context
+
+    checks_by_id: dict[str, dict[str, Any]] = {}
+    for index, raw_check in enumerate(
+        _require_array(raw_validation_checks, "validation_checks")
+    ):
+        check = _require_object(raw_check, f"validation_checks[{index}]")
+        _require_fields(
+            check,
+            f"validation_checks[{index}]",
+            {"proposal_id", "status", "screening"},
+        )
+        proposal_id = _require_string(
+            check["proposal_id"], f"validation_checks[{index}].proposal_id"
+        )
+        if proposal_id in checks_by_id:
+            raise ContractError("validation check proposal IDs must be unique")
+        checks_by_id[proposal_id] = check
+
+    trusted_requirement_ids = {
+        source["source_id"] for source in scope["trusted_requirement_sources"]
+    }
+    bound: list[dict[str, Any]] = []
+    for index, raw_decision in enumerate(
+        _require_array(raw_decisions, "candidate_decisions")
+    ):
+        name = f"candidate_decisions[{index}]"
+        decision = copy.deepcopy(_require_object(raw_decision, name))
+        finding_id = _require_string(
+            decision.get("finding_id"), f"{name}.finding_id"
+        )
+        unit_id = decision.pop("unit_id", None)
+        role = decision.pop("role", None)
+        supplied_task_id = decision.get("task_id")
+        if unit_id is not None or role is not None:
+            if unit_id is None or role is None:
+                raise ContractError(f"{name} must identify both unit_id and role")
+            context = contexts_by_role.get(
+                (
+                    _require_string(unit_id, f"{name}.unit_id"),
+                    _require_string(role, f"{name}.role"),
+                    finding_id,
+                )
+            )
+        else:
+            context = contexts_by_task.get(
+                (
+                    _require_string(supplied_task_id, f"{name}.task_id"),
+                    finding_id,
+                )
+            )
+        if context is None:
+            raise ContractError(f"{name} does not name an accepted candidate")
+        if supplied_task_id is not None and supplied_task_id != context["task_id"]:
+            raise ContractError(f"{name}.task_id does not match the accepted candidate")
+
+        evidence_items = _require_array(
+            decision.get("verification_evidence"), f"{name}.verification_evidence"
+        )
+        bound_evidence: list[str] = []
+        for evidence_index, raw_evidence in enumerate(evidence_items):
+            evidence_name = f"{name}.verification_evidence[{evidence_index}]"
+            evidence = _require_object(raw_evidence, evidence_name)
+            kind = _require_string(evidence.get("kind"), f"{evidence_name}.kind")
+            detail = _require_string(
+                evidence.get("detail"), f"{evidence_name}.detail"
+            )
+            if kind == "code":
+                if set(evidence) != {"kind", "changed_record_id", "detail"}:
+                    raise ContractError(
+                        f"{evidence_name} must bind code evidence to one changed_record_id"
+                    )
+                record_id = _require_string(
+                    evidence["changed_record_id"],
+                    f"{evidence_name}.changed_record_id",
+                )
+                if record_id not in context["inspected_record_ids"] or not any(
+                    record["record_id"] == record_id
+                    for record in scope["changed_records"]
+                ):
+                    raise ContractError(
+                        f"{evidence_name} must name an inspected frozen changed record"
+                    )
+            elif kind == "context_code":
+                if set(evidence) != {"kind", "context_record_id", "detail"}:
+                    raise ContractError(
+                        f"{evidence_name} must bind context code to one context_record_id"
+                    )
+                context_record_id = _require_string(
+                    evidence["context_record_id"],
+                    f"{evidence_name}.context_record_id",
+                )
+                matches = [
+                    record
+                    for record in scope.get("frozen_context_records", [])
+                    if record.get("context_record_id") == context_record_id
+                ]
+                if len(matches) != 1:
+                    raise ContractError(
+                        f"{evidence_name} must name one frozen context record"
+                    )
+            elif kind == "requirement":
+                if set(evidence) != {"kind", "source_id", "detail"}:
+                    raise ContractError(
+                        f"{evidence_name} must bind requirement evidence to source_id"
+                    )
+                source_id = _require_string(
+                    evidence["source_id"], f"{evidence_name}.source_id"
+                )
+                if source_id not in trusted_requirement_ids:
+                    raise ContractError(
+                        f"{evidence_name} must bind to a trusted requirement source"
+                    )
+            elif kind == "validation":
+                if set(evidence) != {
+                    "kind",
+                    "proposal_id",
+                    "expected_status",
+                    "detail",
+                }:
+                    raise ContractError(
+                        f"{evidence_name} has unsupported validation evidence fields"
+                    )
+                proposal_id = _require_string(
+                    evidence["proposal_id"], f"{evidence_name}.proposal_id"
+                )
+                expected_status = _require_string(
+                    evidence["expected_status"],
+                    f"{evidence_name}.expected_status",
+                )
+                check = checks_by_id.get(proposal_id)
+                if (
+                    check is None
+                    or check["screening"] != "approved"
+                    or check["status"] == "not_run"
+                    or check["status"] != expected_status
+                ):
+                    raise ContractError(
+                        f"{evidence_name} does not match an approved validation result"
+                    )
+            else:
+                raise ContractError(f"{evidence_name}.kind is unsupported")
+            bound_evidence.append(detail)
+        decision["task_id"] = context["task_id"]
+        decision["verification_evidence"] = bound_evidence
+        bound.append(decision)
+    return bound
 
 
 def finalize_review(raw_value: object) -> dict[str, Any]:
@@ -2982,14 +3567,8 @@ def finalize_review(raw_value: object) -> dict[str, Any]:
             else None
         )
         expected_records = set(units_by_id[result["unit_id"]]["changed_record_ids"])
-        frozen_owned_anchors = {
-            json.dumps(
-                record["anchor"],
-                sort_keys=True,
-                separators=(",", ":"),
-            )
-            for record in scope["changed_records"]
-            if record["record_id"] in expected_records
+        records_by_id = {
+            record["record_id"]: record for record in scope["changed_records"]
         }
         if (
             result["status"] != "completed"
@@ -3001,16 +3580,15 @@ def finalize_review(raw_value: object) -> dict[str, Any]:
                 "accepted reviewer result identity or owned coverage is inconsistent with the lifecycle"
             )
         if any(
-            json.dumps(
-                candidate["anchor"],
-                sort_keys=True,
-                separators=(",", ":"),
+            not _candidate_binds_owned_record(
+                candidate,
+                records_by_id,
+                expected_records,
             )
-            not in frozen_owned_anchors
             for candidate in result["candidate_findings"]
         ):
             raise ContractError(
-                "accepted reviewer result candidate anchor is outside frozen owned evidence"
+                "accepted reviewer result candidate record and anchor do not identify the same frozen Scope Manifest owned evidence"
             )
         accepted_role_keys.add(role_key)
         for assumption in result["unresolved_assumptions"]:
@@ -3029,95 +3607,29 @@ def finalize_review(raw_value: object) -> dict[str, Any]:
                 raise ContractError(
                     "candidate finding IDs must be unique within a reviewer task"
                 )
-            candidates[key] = candidate
+            candidates[key] = {
+                **candidate,
+                "task_id": result["task_id"],
+                "unit_id": result["unit_id"],
+                "role": result["role"],
+            }
     if accepted_role_keys != set(completed_role_entries):
         raise ContractError(
             "accepted reviewer results must match every completed lifecycle role"
         )
 
-    raw_decisions = _require_array(
-        value["candidate_decisions"], "candidate_decisions"
+    bound_decisions = _bind_finalization_decisions(
+        bundle,
+        scope,
+        value["candidate_decisions"],
+        value.get("validation_checks", []),
     )
-    decisions: dict[tuple[str, str], dict[str, Any]] = {}
-    for index, raw_decision in enumerate(raw_decisions):
-        decision = _require_object(raw_decision, f"candidate_decisions[{index}]")
-        _require_fields(
-            decision,
-            f"candidate_decisions[{index}]",
-            {
-                "task_id",
-                "finding_id",
-                "decision",
-                "reason",
-                "verification_evidence",
-                "factual_conflict",
-            },
-        )
-        key = (
-            _require_string(
-                decision["task_id"], f"candidate_decisions[{index}].task_id"
-            ),
-            _require_string(
-                decision["finding_id"],
-                f"candidate_decisions[{index}].finding_id",
-            ),
-        )
-        if key in decisions:
-            raise ContractError("candidate decisions must be unique")
-        if key not in candidates:
-            raise ContractError("candidate decision does not name an accepted candidate")
-        if decision["decision"] not in {
-            "verified_finding",
-            "rejected",
-            "question",
-            "verification_gap",
-        }:
-            raise ContractError(
-                f"candidate_decisions[{index}].decision is unsupported"
-            )
-        _require_string(
-            decision["reason"], f"candidate_decisions[{index}].reason"
-        )
-        evidence = _require_string_array(
-            decision["verification_evidence"],
-            f"candidate_decisions[{index}].verification_evidence",
-            unique=False,
-        )
-        if not isinstance(decision["factual_conflict"], bool):
-            raise ContractError(
-                f"candidate_decisions[{index}].factual_conflict must be a boolean"
-            )
-        if decision["factual_conflict"] and decision["decision"] not in {
-            "question",
-            "verification_gap",
-        }:
-            raise ContractError(
-                "an unresolved factual conflict must become a question or verification gap"
-            )
-        if decision["decision"] == "verified_finding" and not evidence:
-            raise ContractError(
-                "a verified finding requires independent main-agent verification evidence"
-            )
-        decisions[key] = decision
-    if set(decisions) != set(candidates):
-        raise ContractError("every accepted candidate requires one main-agent decision")
-
-    verified_findings: list[dict[str, Any]] = []
-    questions: list[dict[str, Any]] = unresolved_questions
-    verification_gaps: list[dict[str, Any]] = []
-    for key, candidate in candidates.items():
-        decision = decisions[key]
-        decided = {
-            **candidate,
-            "main_agent_reason": decision["reason"],
-            "verification_evidence": decision["verification_evidence"],
-        }
-        if decision["decision"] == "verified_finding":
-            verified_findings.append(decided)
-        elif decision["decision"] == "question":
-            questions.append(decided)
-        elif decision["decision"] == "verification_gap":
-            verification_gaps.append(decided)
+    adjudicated = adjudicate_candidates(
+        list(candidates.values()), bound_decisions, evidence_bound=True
+    )
+    verified_findings = adjudicated["verified_findings"]
+    questions = [*unresolved_questions, *adjudicated["questions"]]
+    verification_gaps = adjudicated["verification_gaps"]
 
     for role_entry in lifecycle["roles"]:
         if role_entry.get("state") in {"incomplete", "subdivision_required"}:
