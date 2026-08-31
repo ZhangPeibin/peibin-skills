@@ -76,6 +76,7 @@ SECRET_DATA_STEM_RE = re.compile(
     r"service_?accounts?"
     r")"
 )
+SECRET_DIRECTORY_NAMES = {"credential", "credentials", "secret", "secrets"}
 VENDORED_PARTS = {"node_modules", "third_party", "vendor", "vendors"}
 GENERATED_PARTS = {"build", "coverage", "dist", "generated"}
 RENAME_LIMIT = 1000
@@ -280,10 +281,14 @@ class ContainedPathError(ScopeError):
 def _likely_secret_path(relative_path: str) -> bool:
     path = Path(relative_path)
     parts = tuple(part.lower() for part in path.parts)
+    normalized_parent_parts = {
+        re.sub(r"[-.]+", "_", part).strip("_") for part in parts[:-1]
+    }
     name = path.name.lower()
     normalized_stem = re.sub(r"[-.]+", "_", path.stem.lower())
     if (
-        name in SECRET_NAMES
+        normalized_parent_parts & SECRET_DIRECTORY_NAMES
+        or name in SECRET_NAMES
         or name.startswith(".env.")
         or name == ".envrc"
         or name.startswith(".envrc.")

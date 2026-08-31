@@ -1,19 +1,19 @@
 {
   "schema_version": "1.0",
-  "evaluation_id": "issue-5-final-standard-assessment-eaee5063",
+  "evaluation_id": "issue-6-final-standard-scoring-2de51303",
   "producer": {
     "kind": "standard_agent",
-    "context_id": "final-standard-assessor-835e-eaee5063",
+    "context_id": "issue-6-independent-standard-scorer-2de51303",
     "independent": true
   },
-  "reviewed_implementation_digest": "sha256:eaee506379fa2dcfd379efb203e5ff56025f78a8ec3e144515d396ca1324a2e7",
+  "reviewed_implementation_digest": "sha256:2de513032031337d5a8ee9bd7cf99e2bf38a5ba84e73649e763fb871898adcaa",
   "category_scores": {
-    "correctness_and_evidence": 25,
+    "correctness_and_evidence": 24,
     "safety": 20,
-    "scalability": 20,
+    "scalability": 18,
     "extensibility": 15,
     "v1_compatibility": 10,
-    "testability": 10
+    "testability": 8
   },
   "safety_invariants": {
     "report_only": true,
@@ -31,79 +31,92 @@
     {
       "case_id": "mixed-working-tree-safe-scope",
       "status": "passed",
-      "evidence": "Fresh isolated execution matched every expected observation and no forbidden observation."
+      "evidence": "Current-digest executable catalog run preserved distinct staged, unstaged, and safe-untracked records, disclosed excluded oversized and special paths, and observed no repository mutation."
     },
     {
       "case_id": "root-commit-uses-empty-tree",
       "status": "passed",
-      "evidence": "Fresh isolated execution matched every expected observation and no forbidden observation."
+      "evidence": "Current-digest executable catalog run resolved the root commit against the repository empty tree and reported commit/empty-tree semantics."
     },
     {
       "case_id": "merge-commit-parent-is-not-guessed",
       "status": "passed",
-      "evidence": "Fresh isolated execution matched every expected observation and no forbidden observation."
+      "evidence": "Current-digest executable catalog run rejected an ambiguous merge without a parent and accepted the explicitly selected parent."
     },
     {
       "case_id": "explicit-range-is-preserved",
       "status": "passed",
-      "evidence": "Fresh isolated execution matched every expected observation and no forbidden observation."
+      "evidence": "Current-digest executable catalog run retained the requested two-dot range and reported explicit-two-dot rather than merge-base semantics."
     },
     {
       "case_id": "branch-review-uses-base-merge-point",
       "status": "passed",
-      "evidence": "Fresh isolated execution matched every expected observation and no forbidden observation."
+      "evidence": "Current-digest executable catalog run used the branch merge base, included the feature record, and excluded the unrelated base-branch record."
     },
     {
       "case_id": "explicit-pr-authorizes-read-only-retrieval",
       "status": "passed",
-      "evidence": "Fresh isolated execution matched every expected observation and no forbidden observation."
+      "evidence": "Current-digest executable catalog run exercised controlled read-only PR ref retrieval, bound PR 314 and its local refs, ran no validation, and left the host unchanged."
     },
     {
       "case_id": "generic-review-does-not-silently-use-network",
       "status": "passed",
-      "evidence": "Fresh isolated execution matched every expected observation and no forbidden observation."
+      "evidence": "Current-digest executable catalog run returned scope_unresolved with network_attempted false and required an explicit target or permission."
     },
     {
       "case_id": "explicit-requirement-is-partially-omitted",
       "status": "passed",
-      "evidence": "Fresh isolated execution matched every expected observation and no forbidden observation."
+      "evidence": "Current-digest executable catalog run reported the omitted prior-token invalidation behavior with bound requirement evidence."
     },
     {
       "case_id": "trusted-tooling-failure-proves-build-break",
       "status": "passed",
-      "evidence": "Fresh isolated execution matched every expected observation and no forbidden observation."
+      "evidence": "Current-digest executable catalog run retained the failed trusted typecheck, frozen caller context, and verified High compatibility finding without relabeling the check as passed."
     },
     {
       "case_id": "risk-driven-paired-review",
       "status": "passed",
-      "evidence": "Fresh isolated execution matched every expected observation and no forbidden observation."
+      "evidence": "Current-digest executable catalog run produced exactly two isolated role envelopes and reported a complete reviewer pair."
     },
     {
       "case_id": "pure-deletion-has-an-old-side-anchor",
       "status": "passed",
-      "evidence": "Fresh isolated execution matched every expected observation and no forbidden observation."
+      "evidence": "Current-digest executable catalog run retained the reachable deletion finding with an old-side anchor and frozen unchanged caller evidence."
     },
     {
       "case_id": "changed-validation-command-is-untrusted",
       "status": "passed",
-      "evidence": "Fresh isolated execution matched every expected observation and no forbidden observation."
+      "evidence": "Current-digest executable catalog run blocked the changed networked validation command, recorded it as not run, and did not execute it."
     },
     {
       "case_id": "untracked-secret-and-symlink-are-not-read",
       "status": "passed",
-      "evidence": "Fresh isolated execution matched every expected observation and no forbidden observation."
+      "evidence": "Current-digest executable catalog run excluded the likely-secret and untracked symlink with reasons and did not disclose the fixture token."
     },
     {
       "case_id": "severity-calibrates-blast-radius",
       "status": "passed",
-      "evidence": "Fresh isolated execution matched every expected observation and no forbidden observation."
+      "evidence": "Current-digest executable catalog run kept the bounded tenant bypass High and the systemic authentication disablement Critical."
     },
     {
       "case_id": "explicit-review-then-fix-has-two-phases",
       "status": "passed",
-      "evidence": "Fresh isolated execution matched every expected observation and no forbidden observation."
+      "evidence": "Current-digest executable catalog run completed review first, left the authorized fix follow-up not started, and observed no repository mutation."
     }
   ],
-  "unresolved_findings": [],
-  "attestation": "Fresh standard-agent assessment executed outside the workflow runtime input channel against the exact frozen implementation digest."
+  "unresolved_findings": [
+    {
+      "severity": "Medium",
+      "title": "Independent evaluation artifact cannot retain detailed residual evidence"
+    },
+    {
+      "severity": "Medium",
+      "title": "Invalid zero/negative resource ceilings can be dispatch-ready"
+    },
+    {
+      "severity": "Low",
+      "title": "Rename plus mode change may classify as rename_only"
+    }
+  ],
+  "attestation": "Separate standard scoring agent independently reviewed the exact Issue #6 worktree and digest, the prior 43/43 executable-gate evidence, the stated pre-score launcher result, the focused High-fix regressions, all 15 current-digest v1 catalog cases, and the reproduced residual risks."
 }

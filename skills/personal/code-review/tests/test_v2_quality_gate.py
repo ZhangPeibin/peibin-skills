@@ -4344,6 +4344,8 @@ class V2ReviewerHardeningRegressionTest(unittest.TestCase):
 
     def test_common_secret_names_are_excluded_before_open(self) -> None:
         secret_cases = (
+            ("secrets/production.json", "secret-directory"),
+            ("config/secrets/production.json", "nested-secret-directory"),
             ("secrets.production.json", "secret"),
             ("secrets.env", "secret"),
             ("secret.toml", "secret"),
@@ -4439,10 +4441,21 @@ class V2ReviewerHardeningRegressionTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             repo = Path(temp_dir)
             _init_repo(repo)
-            secret = repo / ".env.production"
-            secret.write_text("TOKEN=must-not-be-read\n", encoding="utf-8")
-            _git(repo, "add", ".env.production")
+            secret_paths = (
+                ".env.production",
+                "secrets/production.json",
+                "config/secrets/production.json",
+            )
+            for relative in secret_paths:
+                secret = repo / relative
+                secret.parent.mkdir(parents=True, exist_ok=True)
+                secret.write_text("TOKEN=initial-value\n", encoding="utf-8")
+            _git(repo, "add", *secret_paths)
             _git(repo, "commit", "-qm", "track deployment environment")
+            for relative in secret_paths:
+                (repo / relative).write_text(
+                    "TOKEN=must-not-be-read\n", encoding="utf-8"
+                )
             (repo / "service.py").write_text(
                 "def service(value):\n    return value + 1\n", encoding="utf-8"
             )
@@ -4465,9 +4478,11 @@ class V2ReviewerHardeningRegressionTest(unittest.TestCase):
                 snapshot = _repository_state(repo)
 
             self.assertNotIn(".env.production", opened)
+            self.assertNotIn("production.json", opened)
             self.assertIn("service.py", opened)
             entries = {entry["path"]: entry for entry in snapshot["entries"]}
-            self.assertNotIn("content_sha256", entries[".env.production"])
+            for relative in secret_paths:
+                self.assertNotIn("content_sha256", entries[relative])
             self.assertIn("content_sha256", entries["service.py"])
 
     def test_conflicting_frozen_command_effects_fail_closed_in_any_order(self) -> None:
