@@ -147,8 +147,8 @@ def main() -> int:
         environment.pop(name, None)
     environment.update(
         {
-            "CODE_REVIEW_CHECK_LAUNCHED": "1",
-            "CODE_REVIEW_CHECK_PYTHON": str(python),
+            "TO_AUDIT_CHECK_LAUNCHED": "1",
+            "TO_AUDIT_CHECK_PYTHON": str(python),
             "PATH": _TRUSTED_PATH,
         }
     )

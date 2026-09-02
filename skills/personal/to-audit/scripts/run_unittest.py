@@ -68,7 +68,7 @@ def main() -> int:
     result = unittest.TextTestRunner(verbosity=1).run(suite)
     if not result.wasSuccessful():
         return 1
-    print("CODE_REVIEW_UNITTEST_RUNNER_OK")
+    print("TO_AUDIT_UNITTEST_RUNNER_OK")
     return 0
 
 

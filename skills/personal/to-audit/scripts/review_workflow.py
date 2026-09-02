@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run a controlled, report-only code-review workflow from versioned JSON."""
+"""Run a controlled, report-only to-audit workflow from versioned JSON."""
 
 from __future__ import annotations
 
@@ -46,9 +46,9 @@ from trusted_executables import (
 
 
 SCHEMA_VERSION = "1.0"
-BASE_VALIDATION_POLICY = ".code-review-validation.json"
+BASE_VALIDATION_POLICY = ".to-audit-validation.json"
 INDEPENDENT_EVALUATION_RELATIVE_PATH = Path(
-    "skills/personal/code-review/tests/independent_agent_evaluation.json"
+    "skills/personal/to-audit/tests/independent_agent_evaluation.json"
 )
 CONTROL_ARTIFACT_MAX_BYTES = 1024 * 1024
 SNAPSHOT_HASH_BYTE_LIMIT = 64 * 1024 * 1024
@@ -87,7 +87,7 @@ BLOCKED_SAFETY_ATTEMPTS = {
     "networked_validation": "network_validation_requires_separate_authorization",
     "fix_during_review": "fixing_is_a_separate_authorized_phase",
 }
-GRADER = {"id": "code-review-v2-behavioral-grader", "version": "1.0"}
+GRADER = {"id": "to-audit-v2-behavioral-grader", "version": "1.0"}
 PROBE_MANIFEST = (
     {
         "id": "v1-catalog",
@@ -2977,11 +2977,11 @@ def _sha256_json(value: object) -> str:
 
 
 def _implementation_digest(root: Path) -> str:
-    skill_root = root / "skills" / "personal" / "code-review"
+    skill_root = root / "skills" / "personal" / "to-audit"
     entries: list[tuple[Path, Path, os.stat_result]] = []
     release_input_prefixes = (
-        ("skills", "personal", "code-review", "scripts"),
-        ("skills", "personal", "code-review", "tests"),
+        ("skills", "personal", "to-audit", "scripts"),
+        ("skills", "personal", "to-audit", "tests"),
     )
 
     def is_release_input(relative: Path) -> bool:
@@ -3283,7 +3283,7 @@ def _evidence_binding(root: Path) -> dict[str, str]:
 
 
 def _run_probe(root: Path, probe: dict[str, Any]) -> dict[str, Any]:
-    test_root = root / "skills" / "personal" / "code-review" / "tests"
+    test_root = root / "skills" / "personal" / "to-audit" / "tests"
     environment = os.environ.copy()
     environment.pop("PYTHONHOME", None)
     environment.pop("PYTHONPATH", None)
@@ -3606,7 +3606,7 @@ def _parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     if os.name != "posix":
-        print("ERROR: code-review workflow requires a POSIX runtime", file=sys.stderr)
+        print("ERROR: to-audit workflow requires a POSIX runtime", file=sys.stderr)
         return 2
     args = _parser().parse_args()
     try:

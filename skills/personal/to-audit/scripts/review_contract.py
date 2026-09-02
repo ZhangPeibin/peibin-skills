@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and validate ephemeral Code Review v2 workflow contracts."""
+"""Build and validate ephemeral To-Audit v2 workflow contracts."""
 
 from __future__ import annotations
 

@@ -1,6 +1,6 @@
 # Executable Quality Gates
 
-Use these gates when changing the code-review skill. They evaluate observable review
+Use these gates when changing the to-audit skill. They evaluate observable review
 behavior; they are not a second production orchestrator and do not replace independent
 real-agent evaluation.
 
@@ -9,7 +9,7 @@ real-agent evaluation.
 Run the repository check from the repository root:
 
 ```bash
-uv run --isolated --no-project --no-config --no-env-file --with PyYAML==6.0.2 -- python3 -I skills/personal/code-review/scripts/run_release_check.py
+uv run --isolated --no-project --no-config --no-env-file --with PyYAML==6.0.2 -- python3 -I skills/personal/to-audit/scripts/run_release_check.py
 ```
 
 This is the only supported standard-check command. `uv` creates an isolated environment
@@ -45,7 +45,7 @@ Validation output, every test-runner invocation, grading, and gate reproduction 
 independent observable success markers. A no-op shell, Python, runner, or conditional
 `python3` earlier on `PATH` therefore fails instead of skipping a phase.
 
-The check discovers the code-review contract suites, the executable v1 regression
+The check discovers the to-audit contract suites, the executable v1 regression
 catalog, the v2 controlled workflows, the deterministic Git/schema cases, and the
 repository packaging validator. It then runs the versioned behavioral probes, derives
 the rubric and safety results from their observed subprocess outcomes, and reproduces
@@ -148,7 +148,7 @@ the ambient `PATH`, so a repository-provided `git` wrapper cannot execute before
 initial mutation snapshot.
 Reviewer validation proposals pass through the production screening contract, and a
 controlled validation result can bind only to an approved focused command whose exact
-argv occurs in the frozen base `.code-review-validation.json`. Each frozen command record
+argv occurs in the frozen base `.to-audit-validation.json`. Each frozen command record
 contains `argv`, `requires_network`, `requires_credentials`, and `writes_repository`;
 reviewer flags may increase those authoritative effects but cannot reduce them. Duplicate
 argv records deduplicate only when all authoritative effects agree; conflicting records

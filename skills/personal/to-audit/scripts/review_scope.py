@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Resolve a Code Review v2 scope without mutating the reviewed repository."""
+"""Resolve a To-Audit v2 scope without mutating the reviewed repository."""
 
 from __future__ import annotations
 

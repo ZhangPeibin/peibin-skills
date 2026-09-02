@@ -51,7 +51,8 @@ $to-spec -> $to-tickets
 | [setup-engineering-workflow](./skills/personal/setup-engineering-workflow/) | 配置 issue tracker、标签、领域文档和 pre-PRD 文档 | 仓库准备采用这套工作流 |
 | [tickets](./skills/personal/tickets/) | 管理本地 Markdown 或 GitHub Issue ticket DAG | 需要查看、领取、完成或暂停 Ticket |
 | [handoff](./skills/personal/handoff/) | 使用 `$handoff` 生成可持久恢复的版本化 Markdown 交接物 | 工作需要在另一个会话继续 |
-| [code-review](./skills/personal/code-review/) | 审查指定改动并报告有明确证据的回归 | 本地改动、commit、分支或 PR 需要审查 |
+| [code-review](./skills/personal/code-review/) | 审查指定改动并报告有明确证据的回归 | 日常本地改动、commit、分支或 PR 需要审查 |
+| [to-audit](./skills/personal/to-audit/) | 以高置信 release gate 深度审计指定改动 | 发版或敏感改动需要深度 pre-merge 审计 |
 | [init-flutter-app](./skills/personal/flutter/init-flutter-app/) | 从 `flutter-template` 初始化 Flutter 应用 | 创建新的 Flutter 项目 |
 | [add-flutter-feature](./skills/personal/flutter/add-flutter-feature/) | 给 `flutter-template` 项目增加分层 Feature | 扩展已有 Flutter 应用 |
 
@@ -61,7 +62,7 @@ $to-spec -> $to-tickets
 
 本仓库中的 [Matt Pocock Skills](./skills/vendor/mattpocock/) 是一个经过筛选的本地 fork。来源 revision 记录在 [`SOURCE.json`](./skills/vendor/mattpocock/SOURCE.json)，上游 MIT 许可证也保存在同一目录。
 
-Claude Code 插件当前启用了 `writing-great-skills`、从 `grill-with-docs` 到 `tdd` 的 vendor 工作流阶段，以及负责收尾审查的 personal `code-review`。插件同时启用其他 personal 工作流 Skills，以及 `grilling` 和 `domain-modeling` 依赖。其他 vendor Skills 保留源码，但默认不加载。
+Claude Code 插件当前启用了 `writing-great-skills`、从 `grill-with-docs` 到 `tdd` 的 vendor 工作流阶段，以及 personal 的 `code-review` 和 `to-audit`。插件同时启用其他 personal 工作流 Skills，以及 `grilling` 和 `domain-modeling` 依赖。其他 vendor Skills 保留源码，但默认不加载。
 
 personal 和 vendor 中都存在名为 `handoff` 和 `code-review` 的 Skill。personal 版本是 canonical 版本，也是插件中唯一注册的版本；vendor 版本仅作为参考源码保留。
 
@@ -91,6 +92,7 @@ ln -s /path/to/peibin-skills/skills/personal/setup-engineering-workflow ~/.agent
 ln -s /path/to/peibin-skills/skills/personal/tickets ~/.agents/skills/tickets
 ln -s /path/to/peibin-skills/skills/personal/handoff ~/.agents/skills/handoff
 ln -s /path/to/peibin-skills/skills/personal/code-review ~/.agents/skills/code-review
+ln -s /path/to/peibin-skills/skills/personal/to-audit ~/.agents/skills/to-audit
 ln -s /path/to/peibin-skills/skills/personal/flutter/init-flutter-app ~/.agents/skills/init-flutter-app
 ln -s /path/to/peibin-skills/skills/personal/flutter/add-flutter-feature ~/.agents/skills/add-flutter-feature
 ```
@@ -113,6 +115,7 @@ ln -s /path/to/peibin-skills/skills/personal/setup-engineering-workflow ~/.curso
 ln -s /path/to/peibin-skills/skills/personal/tickets ~/.cursor/skills/tickets
 ln -s /path/to/peibin-skills/skills/personal/handoff ~/.cursor/skills/handoff
 ln -s /path/to/peibin-skills/skills/personal/code-review ~/.cursor/skills/code-review
+ln -s /path/to/peibin-skills/skills/personal/to-audit ~/.cursor/skills/to-audit
 ln -s /path/to/peibin-skills/skills/personal/flutter/init-flutter-app ~/.cursor/skills/init-flutter-app
 ln -s /path/to/peibin-skills/skills/personal/flutter/add-flutter-feature ~/.cursor/skills/add-flutter-feature
 ```
@@ -141,13 +144,13 @@ installer 可能在消费项目中创建或更新 `skills-lock.json`；本源码
 运行与 CI 完全相同的隔离检查：
 
 ```bash
-uv run --isolated --no-project --no-config --no-env-file --with PyYAML==6.0.2 -- python3 -I skills/personal/code-review/scripts/run_release_check.py
+uv run --isolated --no-project --no-config --no-env-file --with PyYAML==6.0.2 -- python3 -I skills/personal/to-audit/scripts/run_release_check.py
 ```
 
 launcher 会检查插件注册、Skill metadata、本地文档链接、workflow 资产、所有 personal
-Skill 测试，以及 code-review release gate。直接运行 `make check` 会主动失败，因为 GNU
+Skill 测试，以及 to-audit release gate。直接运行 `make check` 会主动失败，因为 GNU
 Make 在解析 Makefile 前就可能处理继承的 Make 选项，仓库内的 Makefile 无法先行清洗它们。
-标准检查以及 code-review 内置的 scope 和 workflow CLI 仅支持 POSIX runtime；在不支持的
+标准检查以及 to-audit 内置的 scope 和 workflow CLI 仅支持 POSIX runtime；在不支持的
 平台上，它们会在检查仓库前 fail closed。launcher 还会在每个仓库检查阶段的前后重新验证
 原始 Python entrypoint 及其解析后的 executable target。Python 的绝对路径即使包含空格也受
 支持，因为 launcher 会把它作为正确引用的环境变量传递，而不是交给 Make 按路径列表解析。
@@ -155,7 +158,7 @@ Make 在解析 Makefile 前就可能处理继承的 Make 选项，仓库内的 M
 选择另一个 Python。若有意不提供已暂存的
 `tests/independent_agent_evaluation.json`，上述精确命令必须只因缺少独立评估证据而失败，
 不能因解释器选择或空格路径处理失败。
-code-review probes 还会冻结以下行为：contract 版本必须是 canonical `major.minor`，嵌套
+to-audit probes 还会冻结以下行为：contract 版本必须是 canonical `major.minor`，嵌套
 Git 边界必须通过结构验证且保留外层 index 的 ownership，以及 entry budget 必须流式执行，
 不能先完整物化超限目录再报错。
 

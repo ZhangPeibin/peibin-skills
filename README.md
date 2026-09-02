@@ -51,7 +51,8 @@ $to-spec -> $to-tickets
 | [setup-engineering-workflow](./skills/personal/setup-engineering-workflow/) | Configure issue tracking, labels, domain docs, and pre-PRD docs | A repository is adopting the workflow |
 | [tickets](./skills/personal/tickets/) | Manage a local Markdown or GitHub Issue ticket DAG | Tickets need to be inspected, activated, completed, or paused |
 | [handoff](./skills/personal/handoff/) | Use `$handoff` to create a durable, versioned Markdown handoff | Work must continue in another session |
-| [code-review](./skills/personal/code-review/) | Review a scoped change for concrete, evidence-backed regressions | Local changes, commits, branches, or PRs need review |
+| [code-review](./skills/personal/code-review/) | Review a scoped change for concrete, evidence-backed regressions | Daily local changes, commits, branches, or PRs need review |
+| [to-audit](./skills/personal/to-audit/) | Audit a scoped change with high-confidence release gates | A release or sensitive change needs a deep pre-merge audit |
 | [init-flutter-app](./skills/personal/flutter/init-flutter-app/) | Scaffold a Flutter app from `flutter-template` | Starting a Flutter project |
 | [add-flutter-feature](./skills/personal/flutter/add-flutter-feature/) | Add a layered feature to a `flutter-template` project | Extending an existing Flutter app |
 
@@ -61,7 +62,7 @@ $to-spec -> $to-tickets
 
 The vendored [Matt Pocock skills](./skills/vendor/mattpocock/) are kept as a selective local fork. The source revision is recorded in [`SOURCE.json`](./skills/vendor/mattpocock/SOURCE.json), and the upstream MIT license is preserved alongside it.
 
-The plugin currently enables `writing-great-skills`, the vendored workflow stages from `grill-with-docs` through `tdd`, and the maintained personal `code-review` that closes the review stage. It also enables the other personal workflow skills and the `grilling` and `domain-modeling` dependencies. Other vendored skills remain available as source but are not loaded by default.
+The plugin currently enables `writing-great-skills`, the vendored workflow stages from `grill-with-docs` through `tdd`, and the maintained personal `code-review` and `to-audit` skills. It also enables the other personal workflow skills and the `grilling` and `domain-modeling` dependencies. Other vendored skills remain available as source but are not loaded by default.
 
 Both personal and vendor collections contain skills named `handoff` and `code-review`. The personal versions are canonical and are the only copies registered in the plugin; the vendor versions are retained as reference source.
 
@@ -91,6 +92,7 @@ ln -s /path/to/peibin-skills/skills/personal/setup-engineering-workflow ~/.agent
 ln -s /path/to/peibin-skills/skills/personal/tickets ~/.agents/skills/tickets
 ln -s /path/to/peibin-skills/skills/personal/handoff ~/.agents/skills/handoff
 ln -s /path/to/peibin-skills/skills/personal/code-review ~/.agents/skills/code-review
+ln -s /path/to/peibin-skills/skills/personal/to-audit ~/.agents/skills/to-audit
 ln -s /path/to/peibin-skills/skills/personal/flutter/init-flutter-app ~/.agents/skills/init-flutter-app
 ln -s /path/to/peibin-skills/skills/personal/flutter/add-flutter-feature ~/.agents/skills/add-flutter-feature
 ```
@@ -113,6 +115,7 @@ ln -s /path/to/peibin-skills/skills/personal/setup-engineering-workflow ~/.curso
 ln -s /path/to/peibin-skills/skills/personal/tickets ~/.cursor/skills/tickets
 ln -s /path/to/peibin-skills/skills/personal/handoff ~/.cursor/skills/handoff
 ln -s /path/to/peibin-skills/skills/personal/code-review ~/.cursor/skills/code-review
+ln -s /path/to/peibin-skills/skills/personal/to-audit ~/.cursor/skills/to-audit
 ln -s /path/to/peibin-skills/skills/personal/flutter/init-flutter-app ~/.cursor/skills/init-flutter-app
 ln -s /path/to/peibin-skills/skills/personal/flutter/add-flutter-feature ~/.cursor/skills/add-flutter-feature
 ```
@@ -141,13 +144,13 @@ The installer may create or update `skills-lock.json` in the consuming project; 
 Run the same isolated checks used by CI:
 
 ```bash
-uv run --isolated --no-project --no-config --no-env-file --with PyYAML==6.0.2 -- python3 -I skills/personal/code-review/scripts/run_release_check.py
+uv run --isolated --no-project --no-config --no-env-file --with PyYAML==6.0.2 -- python3 -I skills/personal/to-audit/scripts/run_release_check.py
 ```
 
 The launcher validates plugin registration, Skill metadata, local documentation links,
-workflow assets, every personal Skill test suite, and the code-review release gate. A
+workflow assets, every personal Skill test suite, and the to-audit release gate. A
 direct `make check` intentionally fails because it cannot sanitize inherited Make options
-before GNU Make parses them. The standard check and the bundled code-review scope and
+before GNU Make parses them. The standard check and the to-audit scope and
 workflow CLIs require a POSIX runtime and fail closed before repository inspection on
 unsupported platforms. The launcher also revalidates its original Python entrypoint and
 resolved executable target before and after every repository-check phase. Absolute Python
@@ -158,7 +161,7 @@ The whitespace-path regression derives its copied interpreter from the isolated 
 staged `tests/independent_agent_evaluation.json` is intentionally absent, this exact
 command's only failure must be that independent-evidence boundary, never interpreter
 selection or whitespace-path handling.
-The code-review probes also freeze canonical contract `major.minor` parsing, structurally
+The to-audit probes also freeze canonical contract `major.minor` parsing, structurally
 validated nested Git boundaries with outer-index ownership preserved, and streaming entry
 budgets that stop before an over-limit directory can be materialized.
 

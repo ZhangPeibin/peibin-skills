@@ -1,4 +1,4 @@
-# Code Review v2 Release Process
+# To-Audit v2 Release Process
 
 ## Purpose and readiness
 
@@ -9,7 +9,7 @@ evaluated implementation digest
 at 95/100, confirmed all 10 safety invariants, found no unresolved Critical or
 High issue, and marked the implementation `release_ready`.
 
-The process report is outside the Code Review skill implementation digest. The
+The process report is outside the To-Audit skill implementation digest. The
 post-score release launcher below is the final repository-level confirmation.
 
 ## Dependency chain
@@ -20,7 +20,7 @@ post-score release launcher below is the final repository-level confirmation.
 | #3 | `e31c872`, `0a75e90` | Integration fixture and feature-graph hardening |
 | #4 | `aeeeba6` | Resilient lifecycle and review lenses |
 | #5 | `09835b9` | Executable release gates |
-| #6 | This release commit, `fix(code-review): complete v2 release hardening` | Independent hardening, remediation, scoring, and release decision |
+| #6 | `5cb565f`, `fix(code-review): complete v2 release hardening` | Independent hardening, remediation, scoring, and release decision |
 
 ## Agents and coverage
 
@@ -109,21 +109,21 @@ coverage gaps.
 Focused regressions:
 
 ```bash
-python3 -I skills/personal/code-review/scripts/run_unittest.py run skills/personal/code-review/tests test_v2_quality_gate.V2ReviewerHardeningRegressionTest.test_common_secret_names_are_excluded_before_open
-python3 -I skills/personal/code-review/scripts/run_unittest.py run skills/personal/code-review/tests test_v2_quality_gate.V2ReviewerHardeningRegressionTest.test_repository_snapshot_never_opens_tracked_likely_secrets
+python3 -I skills/personal/to-audit/scripts/run_unittest.py run skills/personal/to-audit/tests test_v2_quality_gate.V2ReviewerHardeningRegressionTest.test_common_secret_names_are_excluded_before_open
+python3 -I skills/personal/to-audit/scripts/run_unittest.py run skills/personal/to-audit/tests test_v2_quality_gate.V2ReviewerHardeningRegressionTest.test_repository_snapshot_never_opens_tracked_likely_secrets
 ```
 
 Skill validation:
 
 ```bash
-UV_OFFLINE=1 uv run --isolated --no-project --no-config --no-env-file --with PyYAML==6.0.2 -- python3 /Users/peibin/.codex/skills/.system/skill-creator/scripts/quick_validate.py skills/personal/code-review
+UV_OFFLINE=1 uv run --isolated --no-project --no-config --no-env-file --with PyYAML==6.0.2 -- python3 /Users/peibin/.codex/skills/.system/skill-creator/scripts/quick_validate.py skills/personal/to-audit
 ```
 
 Release launcher, invoked once in each of the pre-score, post-score unstaged,
 and final staged-artifact lifecycle states:
 
 ```bash
-UV_OFFLINE=1 uv run --isolated --no-project --no-config --no-env-file --with PyYAML==6.0.2 -- python3 -I skills/personal/code-review/scripts/run_release_check.py
+UV_OFFLINE=1 uv run --isolated --no-project --no-config --no-env-file --with PyYAML==6.0.2 -- python3 -I skills/personal/to-audit/scripts/run_release_check.py
 ```
 
 ## Final gate result
@@ -131,9 +131,9 @@ UV_OFFLINE=1 uv run --isolated --no-project --no-config --no-env-file --with PyY
 - Final staged-artifact launcher: passed on its single authorized invocation.
 - Repository validation: 19 plugin skills, 11 personal skills, and 23 Markdown
   files validated.
-- Unit suites: Code Review 217/217 in 274.619 seconds, Handoff 88/88 in 0.413
+- Unit suites: To-Audit 217/217 in 274.619 seconds, Handoff 88/88 in 0.413
   seconds, and Tickets 67/67 in 26.323 seconds; 372/372 total.
 - Behavioral probes: 43/43 passed.
 - Score and safety gate: 95/100, safety pass rate 1.0 (10/10 invariants), no
   unresolved Critical or High finding, and status `release_ready`.
-- Release decision: Code Review v2 is ready to ship.
+- Release decision: To-Audit v2 is ready to ship.
