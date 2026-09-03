@@ -48,21 +48,22 @@ $to-spec -> $to-tickets
 | [to-mermaid](./skills/personal/to-mermaid/) | Produce Mermaid diagrams that render reliably in Markdown | Paths or special characters make diagrams fragile |
 | [to-feature-doc](./skills/personal/to-feature-doc/) | Document an existing feature from its implementation | A module needs an engineering or onboarding guide |
 | [requirements-analysis](./skills/personal/requirements-analysis/) | Clarify a feature one decision at a time and preserve the discussion | Requirements are still ambiguous |
-| [setup-engineering-workflow](./skills/personal/setup-engineering-workflow/) | Configure issue tracking, labels, domain docs, and pre-PRD docs | A repository is adopting the workflow |
+| [setup-engineering-workflow](./skills/personal/setup-engineering-workflow/) | Configure issue tracking, labels, domain docs, pre-PRD docs, and worktrees | A repository is adopting the workflow |
 | [tickets](./skills/personal/tickets/) | Manage a local Markdown or GitHub Issue ticket DAG | Tickets need to be inspected, activated, completed, or paused |
+| [implement](./skills/personal/implement/) | Implement a spec or ticket in its configured worktree | A planned piece of work is ready to build |
 | [handoff](./skills/personal/handoff/) | Use `$handoff` to create a durable, versioned Markdown handoff | Work must continue in another session |
 | [code-review](./skills/personal/code-review/) | Review a scoped change for concrete, evidence-backed regressions | Daily local changes, commits, branches, or PRs need review |
 | [to-audit](./skills/personal/to-audit/) | Audit a scoped change with high-confidence release gates | A release or sensitive change needs a deep pre-merge audit |
 | [init-flutter-app](./skills/personal/flutter/init-flutter-app/) | Scaffold a Flutter app from `flutter-template` | Starting a Flutter project |
 | [add-flutter-feature](./skills/personal/flutter/add-flutter-feature/) | Add a layered feature to a `flutter-template` project | Extending an existing Flutter app |
 
-`setup-engineering-workflow` is adapted from `setup-matt-pocock-skills` in [mattpocock/skills](https://github.com/mattpocock/skills), revision `2ab958093e83e0ec752e6c1c5932da465bf23e0c`. It retains the upstream MIT license and adds configuration for `requirements-analysis` feature documents.
+`setup-engineering-workflow` is adapted from `setup-matt-pocock-skills` in [mattpocock/skills](https://github.com/mattpocock/skills), revision `2ab958093e83e0ec752e6c1c5932da465bf23e0c`. It retains the upstream MIT license and adds configuration for feature documents and worktrees.
 
 ## Vendor Skills
 
 The vendored [Matt Pocock skills](./skills/vendor/mattpocock/) are kept as a selective local fork. The source revision is recorded in [`SOURCE.json`](./skills/vendor/mattpocock/SOURCE.json), and the upstream MIT license is preserved alongside it.
 
-The plugin currently enables `writing-great-skills`, the vendored workflow stages from `grill-with-docs` through `tdd`, and the maintained personal `code-review` and `to-audit` skills. It also enables the other personal workflow skills and the `grilling` and `domain-modeling` dependencies. Other vendored skills remain available as source but are not loaded by default.
+The plugin currently enables the vendored workflow stages `grill-with-docs`, `to-spec`, `to-tickets`, and `tdd`, plus the maintained personal `implement`, `code-review`, and `to-audit` skills. It also enables the other personal workflow skills and the `writing-great-skills`, `grilling`, and `domain-modeling` dependencies. Other vendored skills remain available as source but are not loaded by default.
 
 Both personal and vendor collections contain skills named `handoff` and `code-review`. The personal versions are canonical and are the only copies registered in the plugin; the vendor versions are retained as reference source.
 
@@ -90,6 +91,7 @@ ln -s /path/to/peibin-skills/skills/personal/to-feature-doc ~/.agents/skills/to-
 ln -s /path/to/peibin-skills/skills/personal/requirements-analysis ~/.agents/skills/requirements-analysis
 ln -s /path/to/peibin-skills/skills/personal/setup-engineering-workflow ~/.agents/skills/setup-engineering-workflow
 ln -s /path/to/peibin-skills/skills/personal/tickets ~/.agents/skills/tickets
+ln -s /path/to/peibin-skills/skills/personal/implement ~/.agents/skills/implement
 ln -s /path/to/peibin-skills/skills/personal/handoff ~/.agents/skills/handoff
 ln -s /path/to/peibin-skills/skills/personal/code-review ~/.agents/skills/code-review
 ln -s /path/to/peibin-skills/skills/personal/to-audit ~/.agents/skills/to-audit
@@ -113,6 +115,7 @@ ln -s /path/to/peibin-skills/skills/personal/to-feature-doc ~/.cursor/skills/to-
 ln -s /path/to/peibin-skills/skills/personal/requirements-analysis ~/.cursor/skills/requirements-analysis
 ln -s /path/to/peibin-skills/skills/personal/setup-engineering-workflow ~/.cursor/skills/setup-engineering-workflow
 ln -s /path/to/peibin-skills/skills/personal/tickets ~/.cursor/skills/tickets
+ln -s /path/to/peibin-skills/skills/personal/implement ~/.cursor/skills/implement
 ln -s /path/to/peibin-skills/skills/personal/handoff ~/.cursor/skills/handoff
 ln -s /path/to/peibin-skills/skills/personal/code-review ~/.cursor/skills/code-review
 ln -s /path/to/peibin-skills/skills/personal/to-audit ~/.cursor/skills/to-audit

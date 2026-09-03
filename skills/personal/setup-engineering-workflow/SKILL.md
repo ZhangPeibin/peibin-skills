@@ -1,6 +1,6 @@
 ---
 name: setup-engineering-workflow
-description: Configure this repo for the engineering skills — set up its issue tracker, triage label vocabulary, domain doc layout, and optional pre-PRD feature docs. Run once before first use of the other engineering skills.
+description: Configure this repo for the engineering skills — set up its issue tracker, triage label vocabulary, domain doc layout, optional pre-PRD feature docs, and optional Git worktree policy. Run once before first use of the other engineering skills.
 ---
 
 # Setup Engineering Workflow
@@ -11,6 +11,7 @@ Scaffold the per-repo configuration that the engineering skills assume:
 - **Triage labels** — the strings used for the five canonical triage roles
 - **Domain docs** — where `CONTEXT.md` and ADRs live, and the consumer rules for reading them
 - **Feature docs** — where pre-PRD requirements discussions live when `requirements-analysis` is installed
+- **Worktrees** — whether implementation tasks use isolated Git worktrees and where they live
 
 This is a prompt-driven skill, not a deterministic script. Explore, present what you found, confirm with the user, then write.
 
@@ -26,6 +27,7 @@ Look at the current repo to understand its starting state. Read whatever exists;
 - `docs/adr/` and any `src/*/docs/adr/` directories
 - `docs/agents/` — does this skill's prior output already exist?
 - `docs/feature/` and other product-document directories — is there already a convention for pre-PRD feature discussions?
+- `git worktree list`, `.worktrees/`, `worktrees/`, and `.gitignore` — is a worktree convention already in use?
 - `.scratch/` — sign that a local-markdown issue tracker convention is already in use
 - Is the `triage` skill installed? (a `triage` skill folder alongside this one, or `triage` in your available skills.) This decides whether Section B runs at all.
 - Is the `requirements-analysis` skill installed? This decides whether Section D runs at all.
@@ -72,12 +74,21 @@ The default is `docs/feature/<release>/<feature-slug>/discussion.md`. On **yes**
 
 Record the choice in `docs/agents/feature-docs.md`. This configuration covers pre-PRD discussion documents only. Formal PRDs and implementation tickets continue to use the issue tracker configured in Section A.
 
+**Section E — Worktrees.** Skip this section when the current directory is not a Git repository.
+
+Ask exactly one question:
+
+> Should implementation tasks use isolated worktrees? (recommended: **yes**)
+
+On **yes**, record the policy in `docs/agents/worktrees.md` using the seed template and ensure the root `.gitignore` contains `/.worktrees/`. Worktrees live at `.worktrees/<task-slug>` inside the repository. Setup records the policy only: never create, migrate, or remove a worktree. If the user says no, omit the file, Agent skills sub-block, and ignore rule.
+
 ### 3. Confirm and edit
 
 Show the user a draft of:
 
 - The `## Agent skills` block to add to whichever of `CLAUDE.md` / `AGENTS.md` is being edited (see step 4 for selection rules)
-- The contents of `docs/agents/issue-tracker.md`, `docs/agents/domain.md`, `docs/agents/triage-labels.md` (only when `triage` is installed), and `docs/agents/feature-docs.md` (only when `requirements-analysis` is installed)
+- The contents of `docs/agents/issue-tracker.md`, `docs/agents/domain.md`, `docs/agents/triage-labels.md` (only when `triage` is installed), `docs/agents/feature-docs.md` (only when `requirements-analysis` is installed), and `docs/agents/worktrees.md` (only when worktrees are enabled)
+- The `/.worktrees/` addition to `.gitignore` when worktrees are enabled and it is not already ignored
 
 Let them edit before writing.
 
@@ -113,11 +124,17 @@ The block:
 ### Feature docs
 
 [one-line summary of the pre-PRD discussion path]. See `docs/agents/feature-docs.md`.
+
+### Worktrees
+
+Implementation tasks use isolated worktrees under `.worktrees/<task-slug>`. See `docs/agents/worktrees.md`.
 ```
 
 Include the `### Triage labels` sub-block, and write `docs/agents/triage-labels.md`, only when `triage` is installed and Section B ran. When it isn't, both are omitted.
 
 Include the `### Feature docs` sub-block, and write `docs/agents/feature-docs.md`, only when `requirements-analysis` is installed and Section D ran. When it isn't, both are omitted.
+
+Include the `### Worktrees` sub-block, write `docs/agents/worktrees.md`, and ensure `.gitignore` contains `/.worktrees/` only when worktrees are enabled. Do not change or relocate existing worktrees.
 
 Then write the docs files using the seed templates in this skill folder as a starting point:
 
@@ -127,9 +144,10 @@ Then write the docs files using the seed templates in this skill folder as a sta
 - [triage-labels.md](./triage-labels.md) — label mapping (only if `triage` is installed)
 - [domain.md](./domain.md) — domain doc consumer rules + layout
 - [feature-docs.md](./feature-docs.md) — pre-PRD discussion layout (only if `requirements-analysis` is installed)
+- [worktrees.md](./worktrees.md) — worktree layout and consumer rules (only when worktrees are enabled)
 
 For "other" issue trackers, write `docs/agents/issue-tracker.md` from scratch using the user's description.
 
 ### 5. Done
 
-Tell the user the setup is complete and which engineering skills will now read from these files. Mention they can edit `docs/agents/*.md` directly later — re-running this skill is only necessary if they want to switch issue trackers, change the feature-doc layout, or restart from scratch.
+Tell the user the setup is complete and which engineering skills will now read from these files. Mention they can edit `docs/agents/*.md` directly later — re-running this skill is only necessary if they want to switch issue trackers, change the feature-doc or worktree layout, or restart from scratch.

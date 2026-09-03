@@ -5,6 +5,7 @@
   "copiedAt": "2026-08-05",
   "license": "MIT",
   "localAdditions": [
-    "Retargeted retained engineering skills from the upstream setup skill to the personal setup-engineering-workflow fork."
+    "Retargeted retained engineering skills from the upstream setup skill to the personal setup-engineering-workflow fork.",
+    "Moved the modified implement skill to skills/personal/implement."
   ]
 }
