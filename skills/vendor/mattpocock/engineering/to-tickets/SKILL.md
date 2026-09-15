@@ -24,6 +24,8 @@ Look for opportunities to prefactor the code to make the implementation easier. 
 
 ### 3. Draft vertical slices
 
+Before splitting implementation work, check for unresolved design questions that would materially change ticket boundaries or blocking edges. Resolve them first or propose a bounded exploration ticket with a concrete output and completion criterion. Defer affected implementation tickets until that result makes their scope clear; continue independent slices. An exploration ticket is an exception to the implementation slice rules below. Do not require cheap, reversible implementation details to be settled in advance.
+
 Break the work into **tracer bullet** tickets.
 
 <vertical-slice-rules>
@@ -37,15 +39,19 @@ Break the work into **tracer bullet** tickets.
 
 Give each ticket its **blocking edges** — the other tickets that must complete before it can start. A ticket with no blockers can start immediately.
 
+Derive acceptance criteria from the agreed observable outcomes and relevant scenarios, including failure behavior. A list of files or components to create is not sufficient; do not invent quantitative targets absent from the requirements.
+
 **Wide refactors are the exception to vertical slicing.** A **wide refactor** is one mechanical change — rename a column, retype a shared symbol — whose **blast radius** fans across the whole codebase, so a single edit breaks thousands of call sites at once and no vertical slice can land green. Don't force it into a tracer bullet; sequence it as **expand–contract**. First expand: add the new form beside the old so nothing breaks. Then migrate the call sites over in batches sized by blast radius (per package, per directory), each batch its own ticket blocked by the expand, keeping CI green batch to batch because the old form still exists. Finally contract: delete the old form once no caller remains, in a ticket blocked by every migrate batch. When even the batches can't stay green alone, keep the sequence but let them share an integration branch that all block a final integrate-and-verify ticket — green is promised only there.
 
 ### 4. Quiz the user
 
-Present the proposed breakdown as a numbered list. For each ticket, show:
+First identify the proposed tickets that could start once approved because they have no outstanding blockers, then present the complete breakdown as a numbered list with stable ticket references. Keep blocked work visible without repeating the full descriptions. For each ticket, show:
 
 - **Title**: short descriptive name
 - **Blocked by**: which other tickets (if any) must complete first
 - **What it delivers**: the end-to-end behaviour this ticket makes work
+
+For an exploration ticket, describe the question and evidence it will deliver instead of product behavior. For example, replace "Investigate offline sync" with "Determine whether the existing API detects concurrent edits; deliver a reproducible conflict case and a recommendation that lets us scope the sync implementation."
 
 Ask the user:
 

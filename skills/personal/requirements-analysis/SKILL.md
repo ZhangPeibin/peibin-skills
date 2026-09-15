@@ -63,6 +63,8 @@ Capture the initial request in `discussion.md` before the interview grows long. 
 
 Keep this a structured analysis record, not a verbatim chat transcript. Record the rationale for material decisions and retain rejected alternatives only when they explain an important boundary.
 
+For each open question, record the problem, plausible options, and the next step needed to resolve it. State whether it blocks the PRD or can be carried into technical design.
+
 ## 3. Interview one decision at a time
 
 Use the `grilling` protocol when it is available:
@@ -74,6 +76,8 @@ Use the `grilling` protocol when it is available:
 - Leave product decisions to the user.
 - Do not implement the feature while analyzing it.
 
+When resuming a session or switching topics, briefly state the relevant agreed decision and the question now being resolved; do not repeat the full progress summary every turn. Make the recommendation's key trade-off concrete. For example, replace "How should offline mode work?" with "I recommend offline viewing first, with editing requiring a connection, so v1 avoids synchronization conflicts. Must users edit data while offline?" Adapt the recommendation to the actual requirements.
+
 Cover these areas in the order dependencies require, not as a mechanical questionnaire:
 
 - the user-visible problem and affected actors;
@@ -84,6 +88,10 @@ Cover these areas in the order dependencies require, not as a mechanical questio
 - compatibility, migration, security, performance, accessibility, or operational constraints when relevant;
 - dependencies, assumptions, and unresolved risks.
 
+Prioritize questions that change goals, scope, acceptance criteria, or decisions that would be expensive to reverse. For easily changed implementation details, record a reasonable default or defer to implementation instead of asking for approval item by item; do not use defaults to bypass material product decisions or explicit constraints.
+
+Describe success as an observable benefit or behavior, not merely a list of components to build. Use quantitative targets only when supported by agreed requirements or evidence; never invent thresholds.
+
 Skip irrelevant areas. Reopen an earlier answer when a later decision contradicts it.
 
 ## 4. Maintain the discussion document
@@ -91,7 +99,7 @@ Skip irrelevant areas. Reopen an earlier answer when a later decision contradict
 After each material decision or coherent group of answers:
 
 1. Update the canonical sections to reflect the current understanding.
-2. Move resolved questions out of `Open Questions`.
+2. Move resolved questions into `Decisions`, preserving the conclusion and rationale.
 3. Append a dated session-log entry summarizing what changed and why.
 4. Preserve unresolved uncertainty explicitly; never invent an answer to make the document look complete.
 
@@ -99,7 +107,7 @@ Before a handoff or a likely context boundary, persist the latest state even if 
 
 ## 5. Gate the PRD handoff
 
-When the material branches have been resolved, summarize:
+When the material requirements branches have been resolved, summarize:
 
 - the problem and intended outcome;
 - the agreed scope;
@@ -107,6 +115,8 @@ When the material branches have been resolved, summarize:
 - any remaining open questions or risks.
 
 Ask the user whether the analysis is ready to become a PRD. Do not declare it ready without explicit confirmation.
+
+PRD readiness does not require every technical choice to be settled. Carry remaining design questions and their next steps into the handoff, distinguishing them from unresolved product requirements.
 
 On confirmation:
 
