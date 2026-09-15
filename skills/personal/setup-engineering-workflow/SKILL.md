@@ -1,6 +1,6 @@
 ---
 name: setup-engineering-workflow
-description: Configure this repo for the engineering skills — set up its issue tracker, triage label vocabulary, domain doc layout, optional pre-PRD feature docs, and optional Git worktree policy. Run once before first use of the other engineering skills.
+description: Configure a repository's engineering workflow and project-specific AGENTS.md or CLAUDE.md instructions from its actual commands, structure, and constraints. Use when adopting the engineering skills or refreshing repository setup.
 ---
 
 # Setup Engineering Workflow
@@ -12,6 +12,7 @@ Scaffold the per-repo configuration that the engineering skills assume:
 - **Domain docs** — where `CONTEXT.md` and ADRs live, and the consumer rules for reading them
 - **Feature docs** — where pre-PRD requirements discussions live when `requirements-analysis` is installed
 - **Worktrees** — whether implementation tasks use isolated Git worktrees and where they live
+- **Repository engineering** — actual development commands, module boundaries, and project-specific constraints
 
 This is a prompt-driven skill, not a deterministic script. Explore, present what you found, confirm with the user, then write.
 
@@ -32,6 +33,9 @@ Look at the current repo to understand its starting state. Read whatever exists;
 - Is the `triage` skill installed? (a `triage` skill folder alongside this one, or `triage` in your available skills.) This decides whether Section B runs at all.
 - Is the `requirements-analysis` skill installed? This decides whether Section D runs at all.
 - Monorepo signals — a `pnpm-workspace.yaml`, a `workspaces` field in `package.json`, or a populated `packages/*` with its own `src/`. Present only in a genuinely large multi-package repo; their absence means single-context, which is almost every repo.
+- Engineering facts — inspect manifests, toolchain configuration, CI, task runners, and relevant architecture docs. Follow actual entry points and imports far enough to identify module ownership and special constraints. Read applicable nested instructions before proposing changes to their scope.
+
+Record the actual languages, package/workspace layout, supported platforms, and format, build, test, lint, and generation entry points. Prefer existing repository wrappers. Distinguish commands found in configuration from commands successfully run; never invent a toolchain, package name, feature matrix, or test gate. When sources conflict, report the conflict and resolve material uncertainty with the user instead of silently choosing.
 
 ### 2. Present findings and ask
 
@@ -82,11 +86,26 @@ Ask exactly one question:
 
 On **yes**, record the policy in `docs/agents/worktrees.md` using the seed template and ensure the root `.gitignore` contains `/.worktrees/`. Worktrees live at `.worktrees/<task-slug>` inside the repository. Setup records the policy only: never create, migrate, or remove a worktree. If the user says no, omit the file, Agent skills sub-block, and ignore rule.
 
+**Section F — Repository engineering.** Use the discovered facts to draft concise project instructions. Ask only about material gaps that cannot be resolved from the repository; do not ask the user to restate facts already established.
+
+- Record useful development commands with their working directory and prerequisites. Link to an authoritative command guide when one already exists.
+- Name the modules that own important behavior and any established dependency boundaries, linking detailed architecture docs rather than duplicating them.
+- Include compatibility, persistence, process/resource ownership, concurrency, platform, or generated-code constraints only where the repository actually has those contracts. For example, record the real async runtime owner in a Rust app or request cancellation ownership in a Go service; do not paste generic language rules.
+- Keep existing project-specific instructions. Reconcile confirmed stale facts in place; do not append a second competing command list or overwrite unrelated sections. Create nested instructions only when local commands or invariants genuinely differ.
+- For a new or documentation-only repository, record only facts that exist. Omit absent commands and irrelevant sections; do not scaffold tooling or leave placeholders for future work.
+
+Keep generated instructions centered on durable repository facts and project-specific constraints. Before adding an engineering rule, check the applicable instruction chain and established project guidance; reuse an equivalent rule or repository-owned reference instead of repeating it. Do not copy general coding, verification, or agent lifecycle policies into every project's `AGENTS.md`.
+
+Add a short general principle only when the user requests it or it resolves a concrete recurring project problem not covered by existing guidance. Keep it specific enough to change a likely decision. Do not remove existing user-authored rules merely because the current session has similar injected guidance.
+
+The generated file must remain useful without external agent plugins installed. Record actual project commands, required gates, and special constraints directly; do not add mandatory skill dependencies or links into one user's plugin cache. Setup does not install modes, hooks, comment prefixes, or response-length rules.
+
 ### 3. Confirm and edit
 
 Show the user a draft of:
 
 - The `## Agent skills` block to add to whichever of `CLAUDE.md` / `AGENTS.md` is being edited (see step 4 for selection rules)
+- The project engineering additions or updates in that same file, including any unresolved facts
 - The contents of `docs/agents/issue-tracker.md`, `docs/agents/domain.md`, `docs/agents/triage-labels.md` (only when `triage` is installed), `docs/agents/feature-docs.md` (only when `requirements-analysis` is installed), and `docs/agents/worktrees.md` (only when worktrees are enabled)
 - The `/.worktrees/` addition to `.gitignore` when worktrees are enabled and it is not already ignored
 
@@ -103,6 +122,8 @@ Let them edit before writing.
 Never create `AGENTS.md` when `CLAUDE.md` already exists (or vice versa) — always edit the one that's already there.
 
 If an `## Agent skills` block already exists in the chosen file, update its contents in-place rather than appending a duplicate. Don't overwrite user edits to the surrounding sections.
+
+Apply the agreed engineering updates to existing relevant sections. If none exist, add a concise `## Repository engineering` section outside `## Agent skills`. Preserve both files when `CLAUDE.md` and `AGENTS.md` coexist; follow their existing links and report conflicting instructions rather than deleting or synchronizing one wholesale.
 
 The block:
 
@@ -148,6 +169,8 @@ Then write the docs files using the seed templates in this skill folder as a sta
 
 For "other" issue trackers, write `docs/agents/issue-tracker.md` from scratch using the user's description.
 
-### 5. Done
+### 5. Check and report
 
-Tell the user the setup is complete and which engineering skills will now read from these files. Mention they can edit `docs/agents/*.md` directly later — re-running this skill is only necessary if they want to switch issue trackers, change the feature-doc or worktree layout, or restart from scratch.
+Check the resulting instructions against their sources: named paths and command entry points exist, no placeholders or speculative rules remain, and root/nested instructions do not conflict. Inspect the task-owned diff and run `git diff --check` in Git repositories. Setup changes documentation: do not execute every documented command or run application suites merely to validate the prose. Report which checks ran and which commands were only discovered, with any unresolved prerequisites or conflicts.
+
+Tell the user which instructions and workflow documents changed and which engineering skills consume them. They can edit these files directly or rerun setup when commands, architecture, constraints, or workflow conventions change.
