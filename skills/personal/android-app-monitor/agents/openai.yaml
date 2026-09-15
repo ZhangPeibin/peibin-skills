@@ -1,0 +1,4 @@
+interface:
+  display_name: "Android App Monitor"
+  short_description: "Monitor Android memory, CPU, frames, and app logs"
+  default_prompt: "Use $android-app-monitor to monitor this Android app while I reproduce a performance issue."
