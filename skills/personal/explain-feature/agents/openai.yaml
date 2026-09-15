@@ -1,0 +1,4 @@
+interface:
+  display_name: "Explain Feature"
+  short_description: "Explain delivered features in plain language"
+  default_prompt: "Use $explain-feature to explain what this feature delivers, how it works across tickets, and what remains incomplete."
