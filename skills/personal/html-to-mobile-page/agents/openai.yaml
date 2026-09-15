@@ -1,0 +1,4 @@
+interface:
+  display_name: "HTML to Mobile Page"
+  short_description: "Design and build mobile pages from HTML prototypes"
+  default_prompt: "Use $html-to-mobile-page to improve the visual design of the provided HTML prototype and implement it in this mobile project, preserving its functionality."
