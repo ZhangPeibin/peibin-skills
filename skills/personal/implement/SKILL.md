@@ -10,8 +10,8 @@ Before changing files, read and follow `docs/agents/worktrees.md` when it exists
 
 Use /tdd where possible, at pre-agreed seams.
 
-Run typechecking regularly, single test files regularly, and the full test suite once at the end.
+Follow the repository's required verification gates. Choose focused checks for the changed behavior and affected risks, reuse still-applicable results, and broaden only when the change, repository gates, or an explicit request requires it. Do not run tests on a fixed cadence or require a full suite merely because implementation is ending. Report actual outcomes and relevant checks not run.
 
-Once done, use /code-review to review the work.
+Once done, use `code-review` for the implementation review when available; otherwise review the scoped diff and affected behavior directly. Reuse an applicable review already completed for this change. Reserve `to-audit` for an explicitly requested deep audit; do not automatically perform both.
 
 Commit your work to the current branch.

@@ -7,6 +7,8 @@ description: Review a local change, commit, branch range, or pull request for co
 
 Review the requested change and report only concrete, reachable, material regressions caused by that change.
 
+This is the routine review workflow. Do not automatically escalate it to `to-audit` or perform both workflows for the same scope. An explicitly requested deep audit uses `to-audit`; a delegated reviewer follows the coordinator's assigned scope and execution limits.
+
 This is report-only: do not modify files, Git state, remote state, or create artifacts. Never request credentials or disclose repository content to external services.
 
 ## Resolve the target

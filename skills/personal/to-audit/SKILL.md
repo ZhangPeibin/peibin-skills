@@ -1,9 +1,11 @@
 ---
 name: to-audit
-description: Audit local changes, commits, branch ranges, or pull requests for concrete correctness, security, regression, and requirement or repository-standard violations. Use for a high-confidence pre-merge audit. The audit phase reports findings; fixing or publishing is a separate, explicitly authorized phase.
+description: Perform an explicitly requested deep or high-confidence pre-merge audit of local changes, commits, branch ranges, or pull requests. Report concrete correctness, security, regression, and requirement violations; fixing or publishing is separately authorized. Use code-review for routine review.
 ---
 
 # To-Audit
+
+Use this protocol for an explicitly requested deep audit, including an explicit invocation of `to-audit`. Ordinary review or implementation completion does not activate it automatically. This skill owns the audit scope, review-unit method, and findings criteria; an orchestrator may coordinate execution but must not add a second competing audit protocol. A worker assigned one review unit completes only that unit and does not recursively launch this workflow.
 
 Review the requested change and return only findings that are concrete, reachable,
 and caused, exposed, or required-but-omitted by that change.
