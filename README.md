@@ -47,15 +47,18 @@ $to-spec -> $to-tickets
 | [to-pr](./skills/personal/to-pr/) | Build a PR description from committed changes and open it | A branch is ready for review |
 | [to-mermaid](./skills/personal/to-mermaid/) | Produce Mermaid diagrams that render reliably in Markdown | Paths or special characters make diagrams fragile |
 | [to-feature-doc](./skills/personal/to-feature-doc/) | Document an existing feature from its implementation | A module needs an engineering or onboarding guide |
+| [explain-feature](./skills/personal/explain-feature/) | Explain delivered behavior and implementation across tickets in plain language | You want to understand what a feature does and how it works |
 | [requirements-analysis](./skills/personal/requirements-analysis/) | Clarify a feature one decision at a time and preserve the discussion | Requirements are still ambiguous |
-| [setup-engineering-workflow](./skills/personal/setup-engineering-workflow/) | Configure issue tracking, labels, domain docs, pre-PRD docs, and worktrees | A repository is adopting the workflow |
+| [setup-engineering-workflow](./skills/personal/setup-engineering-workflow/) | Configure workflows and project instructions from actual commands, module boundaries, and constraints | A repository is adopting the workflow |
 | [tickets](./skills/personal/tickets/) | Manage a local Markdown or GitHub Issue ticket DAG | Tickets need to be inspected, activated, completed, or paused |
 | [implement](./skills/personal/implement/) | Implement a spec or ticket in its configured worktree | A planned piece of work is ready to build |
 | [handoff](./skills/personal/handoff/) | Use `$handoff` to create a durable, versioned Markdown handoff | Work must continue in another session |
 | [code-review](./skills/personal/code-review/) | Review a scoped change for concrete, evidence-backed regressions | Daily local changes, commits, branches, or PRs need review |
 | [to-audit](./skills/personal/to-audit/) | Audit a scoped change with high-confidence release gates | A release or sensitive change needs a deep pre-merge audit |
+| [html-to-mobile-page](./skills/personal/html-to-mobile-page/) | Design and implement native mobile pages from HTML prototypes, preserving functionality | An HTML reference needs a native mobile implementation |
 | [init-flutter-app](./skills/personal/flutter/init-flutter-app/) | Scaffold a Flutter app from `flutter-template` | Starting a Flutter project |
 | [add-flutter-feature](./skills/personal/flutter/add-flutter-feature/) | Add a layered feature to a `flutter-template` project | Extending an existing Flutter app |
+| [android-app-monitor](./skills/personal/android-app-monitor/) | Collect Android memory, CPU, frames, logs, and operation markers through ADB | Investigating app performance during manual use |
 
 `setup-engineering-workflow` is adapted from `setup-matt-pocock-skills` in [mattpocock/skills](https://github.com/mattpocock/skills), revision `2ab958093e83e0ec752e6c1c5932da465bf23e0c`. It retains the upstream MIT license and adds configuration for feature documents and worktrees.
 
@@ -88,6 +91,7 @@ ln -s /path/to/peibin-skills/skills/personal/to-commits ~/.agents/skills/to-comm
 ln -s /path/to/peibin-skills/skills/personal/to-pr ~/.agents/skills/to-pr
 ln -s /path/to/peibin-skills/skills/personal/to-mermaid ~/.agents/skills/to-mermaid
 ln -s /path/to/peibin-skills/skills/personal/to-feature-doc ~/.agents/skills/to-feature-doc
+ln -s /path/to/peibin-skills/skills/personal/explain-feature ~/.agents/skills/explain-feature
 ln -s /path/to/peibin-skills/skills/personal/requirements-analysis ~/.agents/skills/requirements-analysis
 ln -s /path/to/peibin-skills/skills/personal/setup-engineering-workflow ~/.agents/skills/setup-engineering-workflow
 ln -s /path/to/peibin-skills/skills/personal/tickets ~/.agents/skills/tickets
@@ -95,8 +99,10 @@ ln -s /path/to/peibin-skills/skills/personal/implement ~/.agents/skills/implemen
 ln -s /path/to/peibin-skills/skills/personal/handoff ~/.agents/skills/handoff
 ln -s /path/to/peibin-skills/skills/personal/code-review ~/.agents/skills/code-review
 ln -s /path/to/peibin-skills/skills/personal/to-audit ~/.agents/skills/to-audit
+ln -s /path/to/peibin-skills/skills/personal/html-to-mobile-page ~/.agents/skills/html-to-mobile-page
 ln -s /path/to/peibin-skills/skills/personal/flutter/init-flutter-app ~/.agents/skills/init-flutter-app
 ln -s /path/to/peibin-skills/skills/personal/flutter/add-flutter-feature ~/.agents/skills/add-flutter-feature
+ln -s /path/to/peibin-skills/skills/personal/android-app-monitor ~/.agents/skills/android-app-monitor
 ```
 
 ### Claude Code Plugin
@@ -112,6 +118,7 @@ ln -s /path/to/peibin-skills/skills/personal/to-commits ~/.cursor/skills/to-comm
 ln -s /path/to/peibin-skills/skills/personal/to-pr ~/.cursor/skills/to-pr
 ln -s /path/to/peibin-skills/skills/personal/to-mermaid ~/.cursor/skills/to-mermaid
 ln -s /path/to/peibin-skills/skills/personal/to-feature-doc ~/.cursor/skills/to-feature-doc
+ln -s /path/to/peibin-skills/skills/personal/explain-feature ~/.cursor/skills/explain-feature
 ln -s /path/to/peibin-skills/skills/personal/requirements-analysis ~/.cursor/skills/requirements-analysis
 ln -s /path/to/peibin-skills/skills/personal/setup-engineering-workflow ~/.cursor/skills/setup-engineering-workflow
 ln -s /path/to/peibin-skills/skills/personal/tickets ~/.cursor/skills/tickets
@@ -119,8 +126,10 @@ ln -s /path/to/peibin-skills/skills/personal/implement ~/.cursor/skills/implemen
 ln -s /path/to/peibin-skills/skills/personal/handoff ~/.cursor/skills/handoff
 ln -s /path/to/peibin-skills/skills/personal/code-review ~/.cursor/skills/code-review
 ln -s /path/to/peibin-skills/skills/personal/to-audit ~/.cursor/skills/to-audit
+ln -s /path/to/peibin-skills/skills/personal/html-to-mobile-page ~/.cursor/skills/html-to-mobile-page
 ln -s /path/to/peibin-skills/skills/personal/flutter/init-flutter-app ~/.cursor/skills/init-flutter-app
 ln -s /path/to/peibin-skills/skills/personal/flutter/add-flutter-feature ~/.cursor/skills/add-flutter-feature
+ln -s /path/to/peibin-skills/skills/personal/android-app-monitor ~/.cursor/skills/android-app-monitor
 ```
 
 ### `npx skills`

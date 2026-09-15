@@ -47,15 +47,18 @@ $to-spec -> $to-tickets
 | [to-pr](./skills/personal/to-pr/) | 根据已提交改动生成 PR 描述并创建 Pull Request | 分支已经可以进入审查 |
 | [to-mermaid](./skills/personal/to-mermaid/) | 生成能在 Markdown 中稳定渲染的 Mermaid 图 | 路径或特殊字符让图表容易出错 |
 | [to-feature-doc](./skills/personal/to-feature-doc/) | 根据真实实现为现有功能生成工程文档 | 模块需要设计说明或新人指南 |
+| [explain-feature](./skills/personal/explain-feature/) | 跨 Ticket 用通俗语言讲解功能交付和实际实现 | 想了解一个功能做了什么、怎么运作、还有哪些缺口 |
 | [requirements-analysis](./skills/personal/requirements-analysis/) | 逐项澄清 Feature，并持久保存讨论过程 | 需求仍然模糊 |
-| [setup-engineering-workflow](./skills/personal/setup-engineering-workflow/) | 配置 issue tracker、标签、领域文档、pre-PRD 文档和 worktree | 仓库准备采用这套工作流 |
+| [setup-engineering-workflow](./skills/personal/setup-engineering-workflow/) | 配置工程工作流，并根据实际命令、模块边界和约束完善项目指令 | 仓库准备采用这套工作流 |
 | [tickets](./skills/personal/tickets/) | 管理本地 Markdown 或 GitHub Issue ticket DAG | 需要查看、领取、完成或暂停 Ticket |
 | [implement](./skills/personal/implement/) | 在仓库配置的 worktree 中实现 spec 或 ticket | 已规划的工作可以开始实现 |
 | [handoff](./skills/personal/handoff/) | 使用 `$handoff` 生成可持久恢复的版本化 Markdown 交接物 | 工作需要在另一个会话继续 |
 | [code-review](./skills/personal/code-review/) | 审查指定改动并报告有明确证据的回归 | 日常本地改动、commit、分支或 PR 需要审查 |
 | [to-audit](./skills/personal/to-audit/) | 以高置信 release gate 深度审计指定改动 | 发版或敏感改动需要深度 pre-merge 审计 |
+| [html-to-mobile-page](./skills/personal/html-to-mobile-page/) | 以 HTML 原型为功能参考，提升 UI 设计后实现原生移动页面 | 需要把 HTML 参考实现为原生移动页面 |
 | [init-flutter-app](./skills/personal/flutter/init-flutter-app/) | 从 `flutter-template` 初始化 Flutter 应用 | 创建新的 Flutter 项目 |
 | [add-flutter-feature](./skills/personal/flutter/add-flutter-feature/) | 给 `flutter-template` 项目增加分层 Feature | 扩展已有 Flutter 应用 |
+| [android-app-monitor](./skills/personal/android-app-monitor/) | 通过 ADB 采集 Android 内存、CPU、帧统计、日志和操作标记 | 手动操作 App 时排查性能问题 |
 
 `setup-engineering-workflow` 改编自 [mattpocock/skills](https://github.com/mattpocock/skills) 的 `setup-matt-pocock-skills`，revision 为 `2ab958093e83e0ec752e6c1c5932da465bf23e0c`。它保留上游 MIT 许可证，并增加了 Feature 文档和 worktree 配置。
 
@@ -88,6 +91,7 @@ ln -s /path/to/peibin-skills/skills/personal/to-commits ~/.agents/skills/to-comm
 ln -s /path/to/peibin-skills/skills/personal/to-pr ~/.agents/skills/to-pr
 ln -s /path/to/peibin-skills/skills/personal/to-mermaid ~/.agents/skills/to-mermaid
 ln -s /path/to/peibin-skills/skills/personal/to-feature-doc ~/.agents/skills/to-feature-doc
+ln -s /path/to/peibin-skills/skills/personal/explain-feature ~/.agents/skills/explain-feature
 ln -s /path/to/peibin-skills/skills/personal/requirements-analysis ~/.agents/skills/requirements-analysis
 ln -s /path/to/peibin-skills/skills/personal/setup-engineering-workflow ~/.agents/skills/setup-engineering-workflow
 ln -s /path/to/peibin-skills/skills/personal/tickets ~/.agents/skills/tickets
@@ -95,8 +99,10 @@ ln -s /path/to/peibin-skills/skills/personal/implement ~/.agents/skills/implemen
 ln -s /path/to/peibin-skills/skills/personal/handoff ~/.agents/skills/handoff
 ln -s /path/to/peibin-skills/skills/personal/code-review ~/.agents/skills/code-review
 ln -s /path/to/peibin-skills/skills/personal/to-audit ~/.agents/skills/to-audit
+ln -s /path/to/peibin-skills/skills/personal/html-to-mobile-page ~/.agents/skills/html-to-mobile-page
 ln -s /path/to/peibin-skills/skills/personal/flutter/init-flutter-app ~/.agents/skills/init-flutter-app
 ln -s /path/to/peibin-skills/skills/personal/flutter/add-flutter-feature ~/.agents/skills/add-flutter-feature
+ln -s /path/to/peibin-skills/skills/personal/android-app-monitor ~/.agents/skills/android-app-monitor
 ```
 
 ### Claude Code Plugin
@@ -112,6 +118,7 @@ ln -s /path/to/peibin-skills/skills/personal/to-commits ~/.cursor/skills/to-comm
 ln -s /path/to/peibin-skills/skills/personal/to-pr ~/.cursor/skills/to-pr
 ln -s /path/to/peibin-skills/skills/personal/to-mermaid ~/.cursor/skills/to-mermaid
 ln -s /path/to/peibin-skills/skills/personal/to-feature-doc ~/.cursor/skills/to-feature-doc
+ln -s /path/to/peibin-skills/skills/personal/explain-feature ~/.cursor/skills/explain-feature
 ln -s /path/to/peibin-skills/skills/personal/requirements-analysis ~/.cursor/skills/requirements-analysis
 ln -s /path/to/peibin-skills/skills/personal/setup-engineering-workflow ~/.cursor/skills/setup-engineering-workflow
 ln -s /path/to/peibin-skills/skills/personal/tickets ~/.cursor/skills/tickets
@@ -119,8 +126,10 @@ ln -s /path/to/peibin-skills/skills/personal/implement ~/.cursor/skills/implemen
 ln -s /path/to/peibin-skills/skills/personal/handoff ~/.cursor/skills/handoff
 ln -s /path/to/peibin-skills/skills/personal/code-review ~/.cursor/skills/code-review
 ln -s /path/to/peibin-skills/skills/personal/to-audit ~/.cursor/skills/to-audit
+ln -s /path/to/peibin-skills/skills/personal/html-to-mobile-page ~/.cursor/skills/html-to-mobile-page
 ln -s /path/to/peibin-skills/skills/personal/flutter/init-flutter-app ~/.cursor/skills/init-flutter-app
 ln -s /path/to/peibin-skills/skills/personal/flutter/add-flutter-feature ~/.cursor/skills/add-flutter-feature
+ln -s /path/to/peibin-skills/skills/personal/android-app-monitor ~/.cursor/skills/android-app-monitor
 ```
 
 ### `npx skills`

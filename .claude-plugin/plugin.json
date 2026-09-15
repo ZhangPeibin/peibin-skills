@@ -2,6 +2,7 @@
     "name": "peibin-skills",
     "skills": [
         "./skills/personal/to-feature-doc",
+        "./skills/personal/explain-feature",
         "./skills/personal/requirements-analysis",
         "./skills/personal/setup-engineering-workflow",
         "./skills/personal/tickets",
@@ -12,6 +13,8 @@
         "./skills/personal/code-review",
         "./skills/personal/to-commits",
         "./skills/personal/to-pr",
+        "./skills/personal/html-to-mobile-page",
+        "./skills/personal/android-app-monitor",
         "./skills/personal/flutter/init-flutter-app",
         "./skills/personal/flutter/add-flutter-feature",
         "./skills/vendor/mattpocock/productivity/writing-great-skills",
