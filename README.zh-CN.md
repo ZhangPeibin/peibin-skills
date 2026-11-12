@@ -52,6 +52,7 @@ $to-spec -> $to-tickets
 | [setup-engineering-workflow](./skills/personal/setup-engineering-workflow/) | 配置工程工作流，并根据实际命令、模块边界和约束完善项目指令 | 仓库准备采用这套工作流 |
 | [tickets](./skills/personal/tickets/) | 管理本地 Markdown 或 GitHub Issue ticket DAG | 需要查看、领取、完成或暂停 Ticket |
 | [implement](./skills/personal/implement/) | 在仓库配置的 worktree 中实现 spec 或 ticket | 已规划的工作可以开始实现 |
+| [blueprint](./skills/personal/blueprint/) | 为 Feature 画出跨层详细架构图，并附简短图注 | Feature 需要一张全局蓝图图 |
 | [handoff](./skills/personal/handoff/) | 使用 `$handoff` 生成可持久恢复的版本化 Markdown 交接物 | 工作需要在另一个会话继续 |
 | [code-review](./skills/personal/code-review/) | 审查指定改动并报告有明确证据的回归 | 日常本地改动、commit、分支或 PR 需要审查 |
 | [html-to-mobile-page](./skills/personal/html-to-mobile-page/) | 以 HTML 原型为功能参考，提升 UI 设计后实现原生移动页面 | 需要把 HTML 参考实现为原生移动页面 |
@@ -88,7 +89,7 @@ cd peibin-skills
 mkdir -p ~/.agents/skills
 for src in \
   to-commits to-pr to-mermaid to-feature-doc explain-feature \
-  requirements-analysis setup-engineering-workflow tickets implement \
+  requirements-analysis setup-engineering-workflow tickets implement blueprint \
   handoff code-review html-to-mobile-page \
   flutter/init-flutter-app flutter/add-flutter-feature android-app-monitor
 do
@@ -108,7 +109,7 @@ done
 mkdir -p ~/.cursor/skills
 for src in \
   to-commits to-pr to-mermaid to-feature-doc explain-feature \
-  requirements-analysis setup-engineering-workflow tickets implement \
+  requirements-analysis setup-engineering-workflow tickets implement blueprint \
   handoff code-review html-to-mobile-page \
   flutter/init-flutter-app flutter/add-flutter-feature android-app-monitor
 do

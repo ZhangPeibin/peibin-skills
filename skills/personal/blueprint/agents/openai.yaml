@@ -1,0 +1,6 @@
+interface:
+  display_name: "Blueprint"
+  short_description: "Draw a detailed feature architecture blueprint"
+  default_prompt: "Use $blueprint to draw one detailed architecture diagram for this feature across app, backend, data, AI, and async boundaries, with a short caption. Do not implement it."
+policy:
+  allow_implicit_invocation: false

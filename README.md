@@ -52,6 +52,7 @@ $to-spec -> $to-tickets
 | [setup-engineering-workflow](./skills/personal/setup-engineering-workflow/) | Configure workflows and project instructions from actual commands, module boundaries, and constraints | A repository is adopting the workflow |
 | [tickets](./skills/personal/tickets/) | Manage a local Markdown or GitHub Issue ticket DAG | Tickets need to be inspected, activated, completed, or paused |
 | [implement](./skills/personal/implement/) | Implement a spec or ticket in its configured worktree | A planned piece of work is ready to build |
+| [blueprint](./skills/personal/blueprint/) | Draw a detailed architecture diagram for a feature across layers, with a short caption | A feature needs a whole-system blueprint diagram |
 | [handoff](./skills/personal/handoff/) | Use `$handoff` to create a durable, versioned Markdown handoff | Work must continue in another session |
 | [code-review](./skills/personal/code-review/) | Review a scoped change for concrete, evidence-backed regressions | Daily local changes, commits, branches, or PRs need review |
 | [html-to-mobile-page](./skills/personal/html-to-mobile-page/) | Design and implement native mobile pages from HTML prototypes, preserving functionality | An HTML reference needs a native mobile implementation |
@@ -88,7 +89,7 @@ Copy or symlink the personal skills you need into the shared agent skills direct
 mkdir -p ~/.agents/skills
 for src in \
   to-commits to-pr to-mermaid to-feature-doc explain-feature \
-  requirements-analysis setup-engineering-workflow tickets implement \
+  requirements-analysis setup-engineering-workflow tickets implement blueprint \
   handoff code-review html-to-mobile-page \
   flutter/init-flutter-app flutter/add-flutter-feature android-app-monitor
 do
@@ -108,7 +109,7 @@ Copy or symlink the personal skills you need into the Cursor skills directory:
 mkdir -p ~/.cursor/skills
 for src in \
   to-commits to-pr to-mermaid to-feature-doc explain-feature \
-  requirements-analysis setup-engineering-workflow tickets implement \
+  requirements-analysis setup-engineering-workflow tickets implement blueprint \
   handoff code-review html-to-mobile-page \
   flutter/init-flutter-app flutter/add-flutter-feature android-app-monitor
 do
