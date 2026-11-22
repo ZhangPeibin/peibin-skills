@@ -21,19 +21,13 @@ $requirements-analysis
 $to-spec -> $to-tickets
                  |
                  v
-          $tickets next
-                 |
-                 v
             $implement
-                 |
-                 v
-          $tickets done
                  |
                  v
            $to-commits -> $to-pr
 ```
 
-`$tickets` 管理由仓库配置选择的本地 Markdown 或 GitHub Issue ticket DAG，不实现或验证产品代码；`$implement` 负责实现、测试、代码审查和实现提交。
+`$to-tickets` 负责把 spec 拆成实现 Ticket；`$implement` 负责实现、测试、代码审查和实现提交。
 
 [![Skill 工作流](./docs/diagrams/skill-workflow.png)](./docs/diagrams/skill-workflow.excalidraw)
 
@@ -50,15 +44,18 @@ $to-spec -> $to-tickets
 | [explain-feature](./skills/personal/explain-feature/) | 跨 Ticket 用通俗语言讲解功能交付和实际实现 | 想了解一个功能做了什么、怎么运作、还有哪些缺口 |
 | [requirements-analysis](./skills/personal/requirements-analysis/) | 逐项澄清 Feature，并持久保存讨论过程 | 需求仍然模糊 |
 | [setup-engineering-workflow](./skills/personal/setup-engineering-workflow/) | 配置工程工作流，并根据实际命令、模块边界和约束完善项目指令 | 仓库准备采用这套工作流 |
-| [tickets](./skills/personal/tickets/) | 管理本地 Markdown 或 GitHub Issue ticket DAG | 需要查看、领取、完成或暂停 Ticket |
 | [implement](./skills/personal/implement/) | 在仓库配置的 worktree 中实现 spec 或 ticket | 已规划的工作可以开始实现 |
 | [blueprint](./skills/personal/blueprint/) | 为 Feature 画出跨层详细架构图，并附简短图注 | Feature 需要一张全局蓝图图 |
 | [handoff](./skills/personal/handoff/) | 使用 `$handoff` 生成可持久恢复的版本化 Markdown 交接物 | 工作需要在另一个会话继续 |
 | [code-review](./skills/personal/code-review/) | 审查指定改动并报告有明确证据的回归 | 日常本地改动、commit、分支或 PR 需要审查 |
-| [html-to-mobile-page](./skills/personal/html-to-mobile-page/) | 以 HTML 原型为功能参考，提升 UI 设计后实现原生移动页面 | 需要把 HTML 参考实现为原生移动页面 |
+| [english-tutor](./skills/personal/english-tutor/) | 先用自然英文复述中文或有语法错误的英文消息，再执行任务 | 希望在完成任务的同时学习英语表达 |
 | [init-flutter-app](./skills/personal/flutter/init-flutter-app/) | 从 `flutter-template` 初始化 Flutter 应用 | 创建新的 Flutter 项目 |
 | [add-flutter-feature](./skills/personal/flutter/add-flutter-feature/) | 给 `flutter-template` 项目增加分层 Feature | 扩展已有 Flutter 应用 |
 | [android-app-monitor](./skills/personal/android-app-monitor/) | 通过 ADB 采集 Android 内存、CPU、帧统计、日志和操作标记 | 手动操作 App 时排查性能问题 |
+
+## Archived Skills / 归档 Skills
+
+[`archive/`](./archive/) 下的 Skill 仅作参考保存，不再注册到插件，也不会由下方安装命令安装：`tickets` 和 `html-to-mobile-page`。
 
 `setup-engineering-workflow` 改编自 [mattpocock/skills](https://github.com/mattpocock/skills) 的 `setup-matt-pocock-skills`，revision 为 `2ab958093e83e0ec752e6c1c5932da465bf23e0c`。它保留上游 MIT 许可证，并增加了 Feature 文档和 worktree 配置。
 
@@ -89,8 +86,8 @@ cd peibin-skills
 mkdir -p ~/.agents/skills
 for src in \
   to-commits to-pr to-mermaid to-feature-doc explain-feature \
-  requirements-analysis setup-engineering-workflow tickets implement blueprint \
-  handoff code-review html-to-mobile-page \
+  requirements-analysis setup-engineering-workflow implement blueprint \
+  handoff code-review english-tutor \
   flutter/init-flutter-app flutter/add-flutter-feature android-app-monitor
 do
   ln -s "/path/to/peibin-skills/skills/personal/$src" ~/.agents/skills/"$(basename "$src")"
@@ -109,8 +106,8 @@ done
 mkdir -p ~/.cursor/skills
 for src in \
   to-commits to-pr to-mermaid to-feature-doc explain-feature \
-  requirements-analysis setup-engineering-workflow tickets implement blueprint \
-  handoff code-review html-to-mobile-page \
+  requirements-analysis setup-engineering-workflow implement blueprint \
+  handoff code-review english-tutor \
   flutter/init-flutter-app flutter/add-flutter-feature android-app-monitor
 do
   ln -s "/path/to/peibin-skills/skills/personal/$src" ~/.cursor/skills/"$(basename "$src")"

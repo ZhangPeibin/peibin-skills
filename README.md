@@ -21,19 +21,13 @@ $requirements-analysis
 $to-spec -> $to-tickets
                  |
                  v
-          $tickets next
-                 |
-                 v
             $implement
-                 |
-                 v
-          $tickets done
                  |
                  v
            $to-commits -> $to-pr
 ```
 
-`$tickets` manages the configured local Markdown or GitHub Issue ticket DAG. It does not implement or verify product work; `$implement` owns implementation, tests, review, and implementation commits.
+`$to-tickets` breaks the spec into implementation tickets. `$implement` owns implementation, tests, review, and implementation commits.
 
 [![Skill workflow](./docs/diagrams/skill-workflow.png)](./docs/diagrams/skill-workflow.excalidraw)
 
@@ -50,15 +44,19 @@ $to-spec -> $to-tickets
 | [explain-feature](./skills/personal/explain-feature/) | Explain delivered behavior and implementation across tickets in plain language | You want to understand what a feature does and how it works |
 | [requirements-analysis](./skills/personal/requirements-analysis/) | Clarify a feature one decision at a time and preserve the discussion | Requirements are still ambiguous |
 | [setup-engineering-workflow](./skills/personal/setup-engineering-workflow/) | Configure workflows and project instructions from actual commands, module boundaries, and constraints | A repository is adopting the workflow |
-| [tickets](./skills/personal/tickets/) | Manage a local Markdown or GitHub Issue ticket DAG | Tickets need to be inspected, activated, completed, or paused |
 | [implement](./skills/personal/implement/) | Implement a spec or ticket in its configured worktree | A planned piece of work is ready to build |
 | [blueprint](./skills/personal/blueprint/) | Draw a detailed architecture diagram for a feature across layers, with a short caption | A feature needs a whole-system blueprint diagram |
 | [handoff](./skills/personal/handoff/) | Use `$handoff` to create a durable, versioned Markdown handoff | Work must continue in another session |
 | [code-review](./skills/personal/code-review/) | Review a scoped change for concrete, evidence-backed regressions | Daily local changes, commits, branches, or PRs need review |
-| [html-to-mobile-page](./skills/personal/html-to-mobile-page/) | Design and implement native mobile pages from HTML prototypes, preserving functionality | An HTML reference needs a native mobile implementation |
+| [english-tutor](./skills/personal/english-tutor/) | Restate Chinese or broken-English messages in natural English before doing the work | The user wants English feedback alongside the task |
 | [init-flutter-app](./skills/personal/flutter/init-flutter-app/) | Scaffold a Flutter app from `flutter-template` | Starting a Flutter project |
 | [add-flutter-feature](./skills/personal/flutter/add-flutter-feature/) | Add a layered feature to a `flutter-template` project | Extending an existing Flutter app |
 | [android-app-monitor](./skills/personal/android-app-monitor/) | Collect Android memory, CPU, frames, logs, and operation markers through ADB | Investigating app performance during manual use |
+
+## Archived Skills
+
+Skills under [`archive/`](./archive/) are kept for reference but are no longer registered in the plugin or installed by the commands below: `tickets` and `html-to-mobile-page`.
+
 
 `setup-engineering-workflow` is adapted from `setup-matt-pocock-skills` in [mattpocock/skills](https://github.com/mattpocock/skills), revision `2ab958093e83e0ec752e6c1c5932da465bf23e0c`. It retains the upstream MIT license and adds configuration for feature documents and worktrees.
 
@@ -89,8 +87,8 @@ Copy or symlink the personal skills you need into the shared agent skills direct
 mkdir -p ~/.agents/skills
 for src in \
   to-commits to-pr to-mermaid to-feature-doc explain-feature \
-  requirements-analysis setup-engineering-workflow tickets implement blueprint \
-  handoff code-review html-to-mobile-page \
+  requirements-analysis setup-engineering-workflow implement blueprint \
+  handoff code-review english-tutor \
   flutter/init-flutter-app flutter/add-flutter-feature android-app-monitor
 do
   ln -s "/path/to/peibin-skills/skills/personal/$src" ~/.agents/skills/"$(basename "$src")"
@@ -109,8 +107,8 @@ Copy or symlink the personal skills you need into the Cursor skills directory:
 mkdir -p ~/.cursor/skills
 for src in \
   to-commits to-pr to-mermaid to-feature-doc explain-feature \
-  requirements-analysis setup-engineering-workflow tickets implement blueprint \
-  handoff code-review html-to-mobile-page \
+  requirements-analysis setup-engineering-workflow implement blueprint \
+  handoff code-review english-tutor \
   flutter/init-flutter-app flutter/add-flutter-feature android-app-monitor
 do
   ln -s "/path/to/peibin-skills/skills/personal/$src" ~/.cursor/skills/"$(basename "$src")"

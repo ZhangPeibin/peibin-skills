@@ -1,0 +1,4 @@
+interface:
+  display_name: "English Tutor"
+  short_description: "Restate the user's message in natural English"
+  default_prompt: "Use $english-tutor to restate my message in natural English before doing the work."
