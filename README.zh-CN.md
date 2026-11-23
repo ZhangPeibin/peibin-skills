@@ -15,19 +15,28 @@
 核心交付流程把需求、规划、实现、Ticket 状态、提交和 Pull Request 分成独立职责：
 
 ```text
-$requirements-analysis
+$requirements-analysis -> discussion.md
         |
         v
-$to-spec -> $to-tickets
-                 |
-                 v
-            $implement
-                 |
-                 v
-           $to-commits -> $to-pr
+   $why-this
+        |
+        v
+$to-spec -> $in-your-own-words
+        |
+        v
+   $why-this
+        |
+        v
+$to-tickets
+        |
+        v
+   $why-this -> $how-this
+        |
+        v
+$implement -> $to-commits -> $to-pr
 ```
 
-`$to-tickets` 负责把 spec 拆成实现 Ticket；`$implement` 负责实现、测试、代码审查和实现提交。
+`$in-your-own-words` 用用户的语言复述目标和问题，让用户在建 Ticket 之前确认 spec 符合本意；`$why-this` 是用户主动调用的必要性检查，可在写完 discussion、spec 或 Ticket 后重新审视这项工作是否存在必要；`$to-tickets` 负责把 spec 拆成实现 Ticket；`$how-this` 在编码前审视实现方案、可复用代码和更优架构；`$implement` 负责实现、测试、代码审查和实现提交。
 
 [![Skill 工作流](./docs/diagrams/skill-workflow.png)](./docs/diagrams/skill-workflow.excalidraw)
 
@@ -43,9 +52,11 @@ $to-spec -> $to-tickets
 | [to-feature-doc](./skills/personal/to-feature-doc/) | 根据真实实现为现有功能生成工程文档 | 模块需要设计说明或新人指南 |
 | [explain-feature](./skills/personal/explain-feature/) | 跨 Ticket 用通俗语言讲解功能交付和实际实现 | 想了解一个功能做了什么、怎么运作、还有哪些缺口 |
 | [requirements-analysis](./skills/personal/requirements-analysis/) | 逐项澄清 Feature，并持久保存讨论过程 | 需求仍然模糊 |
+| [why-this](./skills/personal/why-this/) | 重新审视 discussion、spec 或 ticket 是否必要，并记录 keep/shrink/merge/defer/drop 结论 | 准备为规划产物投入精力之前 |
 | [setup-engineering-workflow](./skills/personal/setup-engineering-workflow/) | 配置工程工作流，并根据实际命令、模块边界和约束完善项目指令 | 仓库准备采用这套工作流 |
 | [implement](./skills/personal/implement/) | 在仓库配置的 worktree 中实现 spec 或 ticket | 已规划的工作可以开始实现 |
 | [blueprint](./skills/personal/blueprint/) | 为 Feature 画出跨层详细架构图，并附简短图注 | Feature 需要一张全局蓝图图 |
+| [how-this](./skills/personal/how-this/) | 在编码前审视 ticket 的实现方案、可复用代码和更优架构 | 正在决定 ticket 如何实现 |
 | [handoff](./skills/personal/handoff/) | 使用 `$handoff` 生成可持久恢复的版本化 Markdown 交接物 | 工作需要在另一个会话继续 |
 | [code-review](./skills/personal/code-review/) | 审查指定改动并报告有明确证据的回归 | 日常本地改动、commit、分支或 PR 需要审查 |
 | [english-tutor](./skills/personal/english-tutor/) | 先用自然英文复述中文或有语法错误的英文消息，再执行任务 | 希望在完成任务的同时学习英语表达 |
@@ -63,7 +74,9 @@ $to-spec -> $to-tickets
 
 本仓库中的 [Matt Pocock Skills](./skills/vendor/mattpocock/) 是一个经过筛选的本地 fork。来源 revision 记录在 [`SOURCE.json`](./skills/vendor/mattpocock/SOURCE.json)，上游 MIT 许可证也保存在同一目录。
 
-Claude Code 插件当前启用了 vendor 工作流阶段 `grill-with-docs`、`to-spec`、`to-tickets` 和 `tdd`，以及 personal 的 `implement` 和 `code-review`。插件同时启用其他 personal 工作流 Skills，以及 `writing-great-skills`、`grilling` 和 `domain-modeling` 依赖。其他 vendor Skills 保留源码，但默认不加载。
+vendor 的 [pstack Skill](./skills/vendor/poteto/) `in-your-own-words` 复制自 [cursor/plugins](https://github.com/cursor/plugins)。来源 revision 记录在 [`SOURCE.json`](./skills/vendor/poteto/SOURCE.json)，上游 MIT 许可证也保存在同一目录。
+
+Claude Code 插件当前启用了 vendor 工作流阶段 `grill-with-docs`、`to-spec`、`in-your-own-words`、`to-tickets` 和 `tdd`，以及 personal 的 `implement` 和 `code-review`。插件同时启用其他 personal 工作流 Skills，以及 `writing-great-skills`、`grilling` 和 `domain-modeling` 依赖。其他 vendor Skills 保留源码，但默认不加载。
 
 personal 和 vendor 中都存在名为 `handoff` 和 `code-review` 的 Skill。personal 版本是 canonical 版本，也是插件中唯一注册的版本；vendor 版本仅作为参考源码保留。
 
@@ -86,7 +99,7 @@ cd peibin-skills
 mkdir -p ~/.agents/skills
 for src in \
   to-commits to-pr to-mermaid to-feature-doc explain-feature \
-  requirements-analysis setup-engineering-workflow implement blueprint \
+  requirements-analysis why-this setup-engineering-workflow implement blueprint how-this \
   handoff code-review english-tutor \
   flutter/init-flutter-app flutter/add-flutter-feature android-app-monitor
 do
@@ -106,7 +119,7 @@ done
 mkdir -p ~/.cursor/skills
 for src in \
   to-commits to-pr to-mermaid to-feature-doc explain-feature \
-  requirements-analysis setup-engineering-workflow implement blueprint \
+  requirements-analysis why-this setup-engineering-workflow implement blueprint how-this \
   handoff code-review english-tutor \
   flutter/init-flutter-app flutter/add-flutter-feature android-app-monitor
 do
@@ -128,7 +141,7 @@ npx skills add /path/to/peibin-skills/skills/personal/code-review --agent codex 
 安装主要工程工作流及其依赖：
 
 ```bash
-npx skills add /path/to/peibin-skills --full-depth --skill setup-engineering-workflow requirements-analysis grill-with-docs to-spec to-tickets implement tdd grilling domain-modeling
+npx skills add /path/to/peibin-skills --full-depth --skill setup-engineering-workflow requirements-analysis grill-with-docs to-spec in-your-own-words to-tickets why-this how-this implement tdd grilling domain-modeling
 ```
 
 installer 可能在消费项目中创建或更新 `skills-lock.json`；本源码仓库不维护该锁文件。

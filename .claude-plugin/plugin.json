@@ -4,9 +4,11 @@
         "./skills/personal/to-feature-doc",
         "./skills/personal/explain-feature",
         "./skills/personal/requirements-analysis",
+        "./skills/personal/why-this",
         "./skills/personal/setup-engineering-workflow",
         "./skills/personal/implement",
         "./skills/personal/blueprint",
+        "./skills/personal/how-this",
         "./skills/personal/handoff",
         "./skills/personal/to-mermaid",
         "./skills/personal/code-review",
@@ -21,6 +23,7 @@
         "./skills/vendor/mattpocock/engineering/domain-modeling",
         "./skills/vendor/mattpocock/engineering/grill-with-docs",
         "./skills/vendor/mattpocock/engineering/to-spec",
+        "./skills/vendor/poteto/in-your-own-words",
         "./skills/vendor/mattpocock/engineering/to-tickets",
         "./skills/vendor/mattpocock/engineering/tdd"
     ]

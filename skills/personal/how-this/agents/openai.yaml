@@ -1,0 +1,6 @@
+interface:
+  display_name: "How This"
+  short_description: "Review a ticket's implementation approach before coding"
+  default_prompt: "Use $how-this to review why this approach fits the ticket, what existing code can be reused, and whether a better architecture exists."
+policy:
+  allow_implicit_invocation: false

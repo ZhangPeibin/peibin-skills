@@ -15,19 +15,28 @@ The repository separates ownership clearly:
 The core delivery loop keeps requirements, planning, implementation, ticket state, commits, and pull requests as separate responsibilities:
 
 ```text
-$requirements-analysis
+$requirements-analysis -> discussion.md
         |
         v
-$to-spec -> $to-tickets
-                 |
-                 v
-            $implement
-                 |
-                 v
-           $to-commits -> $to-pr
+   $why-this
+        |
+        v
+$to-spec -> $in-your-own-words
+        |
+        v
+   $why-this
+        |
+        v
+$to-tickets
+        |
+        v
+   $why-this -> $how-this
+        |
+        v
+$implement -> $to-commits -> $to-pr
 ```
 
-`$to-tickets` breaks the spec into implementation tickets. `$implement` owns implementation, tests, review, and implementation commits.
+`$in-your-own-words` restates the goal and problem so the user can confirm the spec matches their intent before tickets are created. `$why-this` is a user-invoked necessity gate you can run after the discussion, the spec, or the tickets to challenge whether the work should exist. `$to-tickets` breaks the spec into implementation tickets. `$how-this` reviews the planned implementation approach, reuse opportunities, and a better architecture before coding. `$implement` owns implementation, tests, review, and implementation commits.
 
 [![Skill workflow](./docs/diagrams/skill-workflow.png)](./docs/diagrams/skill-workflow.excalidraw)
 
@@ -43,9 +52,11 @@ $to-spec -> $to-tickets
 | [to-feature-doc](./skills/personal/to-feature-doc/) | Document an existing feature from its implementation | A module needs an engineering or onboarding guide |
 | [explain-feature](./skills/personal/explain-feature/) | Explain delivered behavior and implementation across tickets in plain language | You want to understand what a feature does and how it works |
 | [requirements-analysis](./skills/personal/requirements-analysis/) | Clarify a feature one decision at a time and preserve the discussion | Requirements are still ambiguous |
+| [why-this](./skills/personal/why-this/) | Challenge whether a discussion, spec, or ticket is necessary and record a keep/shrink/merge/defer/drop verdict | You are about to commit effort to a planning artifact |
 | [setup-engineering-workflow](./skills/personal/setup-engineering-workflow/) | Configure workflows and project instructions from actual commands, module boundaries, and constraints | A repository is adopting the workflow |
 | [implement](./skills/personal/implement/) | Implement a spec or ticket in its configured worktree | A planned piece of work is ready to build |
 | [blueprint](./skills/personal/blueprint/) | Draw a detailed architecture diagram for a feature across layers, with a short caption | A feature needs a whole-system blueprint diagram |
+| [how-this](./skills/personal/how-this/) | Review a ticket's implementation approach, reuse opportunities, and better architecture before coding | You are deciding how to implement a ticket |
 | [handoff](./skills/personal/handoff/) | Use `$handoff` to create a durable, versioned Markdown handoff | Work must continue in another session |
 | [code-review](./skills/personal/code-review/) | Review a scoped change for concrete, evidence-backed regressions | Daily local changes, commits, branches, or PRs need review |
 | [english-tutor](./skills/personal/english-tutor/) | Restate Chinese or broken-English messages in natural English before doing the work | The user wants English feedback alongside the task |
@@ -64,7 +75,9 @@ Skills under [`archive/`](./archive/) are kept for reference but are no longer r
 
 The vendored [Matt Pocock skills](./skills/vendor/mattpocock/) are kept as a selective local fork. The source revision is recorded in [`SOURCE.json`](./skills/vendor/mattpocock/SOURCE.json), and the upstream MIT license is preserved alongside it.
 
-The plugin currently enables the vendored workflow stages `grill-with-docs`, `to-spec`, `to-tickets`, and `tdd`, plus the maintained personal `implement` and `code-review` skills. It also enables the other personal workflow skills and the `writing-great-skills`, `grilling`, and `domain-modeling` dependencies. Other vendored skills remain available as source but are not loaded by default.
+The vendored [pstack skill](./skills/vendor/poteto/) `in-your-own-words` is copied from [cursor/plugins](https://github.com/cursor/plugins). Its source revision is recorded in [`SOURCE.json`](./skills/vendor/poteto/SOURCE.json), and the upstream MIT license is preserved alongside it.
+
+The plugin currently enables the vendored workflow stages `grill-with-docs`, `to-spec`, `in-your-own-words`, `to-tickets`, and `tdd`, plus the maintained personal `implement` and `code-review` skills. It also enables the other personal workflow skills and the `writing-great-skills`, `grilling`, and `domain-modeling` dependencies. Other vendored skills remain available as source but are not loaded by default.
 
 Both personal and vendor collections contain skills named `handoff` and `code-review`. The personal versions are canonical and are the only copies registered in the plugin; the vendor versions are retained as reference source.
 
@@ -87,7 +100,7 @@ Copy or symlink the personal skills you need into the shared agent skills direct
 mkdir -p ~/.agents/skills
 for src in \
   to-commits to-pr to-mermaid to-feature-doc explain-feature \
-  requirements-analysis setup-engineering-workflow implement blueprint \
+  requirements-analysis why-this setup-engineering-workflow implement blueprint how-this \
   handoff code-review english-tutor \
   flutter/init-flutter-app flutter/add-flutter-feature android-app-monitor
 do
@@ -107,7 +120,7 @@ Copy or symlink the personal skills you need into the Cursor skills directory:
 mkdir -p ~/.cursor/skills
 for src in \
   to-commits to-pr to-mermaid to-feature-doc explain-feature \
-  requirements-analysis setup-engineering-workflow implement blueprint \
+  requirements-analysis why-this setup-engineering-workflow implement blueprint how-this \
   handoff code-review english-tutor \
   flutter/init-flutter-app flutter/add-flutter-feature android-app-monitor
 do
@@ -129,7 +142,7 @@ Do not install `handoff` or `code-review` through repository-root `--full-depth`
 Install the main workflow and its dependencies:
 
 ```bash
-npx skills add /path/to/peibin-skills --full-depth --skill setup-engineering-workflow requirements-analysis grill-with-docs to-spec to-tickets implement tdd grilling domain-modeling
+npx skills add /path/to/peibin-skills --full-depth --skill setup-engineering-workflow requirements-analysis grill-with-docs to-spec in-your-own-words to-tickets why-this how-this implement tdd grilling domain-modeling
 ```
 
 The installer may create or update `skills-lock.json` in the consuming project; this source repository does not maintain that lock file.

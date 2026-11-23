@@ -1,0 +1,6 @@
+interface:
+  display_name: "Why This"
+  short_description: "Challenge whether a discussion, spec, or ticket should exist"
+  default_prompt: "Use $why-this to challenge whether this artifact should exist, in its current scope, and record a necessity verdict."
+policy:
+  allow_implicit_invocation: false
